@@ -807,6 +807,13 @@ FORM: Modern developer product workstation, responsive bento layout, interactive
       flex-grow: 1;
     }
 
+    /* 避免旗標（如 --purge-path）在兩個連字號之間被斷行 */
+    .feature-card-desc code,
+    .faq-answer code,
+    .data-table td[data-i18n] code {
+      white-space: nowrap;
+    }
+
     .feature-code-pill {
       background: var(--bg-code);
       border: 1px solid var(--border-subtle);
@@ -1352,6 +1359,9 @@ FORM: Modern developer product workstation, responsive bento layout, interactive
           <button class="term-preset-btn" id="btnDemoGit" data-i18n="demo_btn_git">🚫 rm -rf .git</button>
           <button class="term-preset-btn" id="btnDemoRestore" data-i18n="demo_btn_restore">🔄 rm --restore</button>
           <button class="term-preset-btn" id="btnDemoLog" data-i18n="demo_btn_log">📜 cat log</button>
+          <button class="term-preset-btn" id="btnDemoList">📋 rm --list</button>
+          <button class="term-preset-btn" id="btnDemoStats">📊 rm --stats</button>
+          <button class="term-preset-btn" id="btnDemoPurge">🧹 rm --purge 30 --dry-run</button>
         </div>
         <div class="terminal-body" id="termOutput">
           <div class="term-line term-info"># 歡迎體驗 better-rm 線上模擬器！點擊上方按鈕測試操作：</div>
@@ -1437,6 +1447,26 @@ FORM: Modern developer product workstation, responsive bento layout, interactive
             支援 <code>-r</code>, <code>-R</code>, <code>-f</code>, <code>-i</code>, <code>-I</code>, <code>-v</code> 等所有常用旗標，無需改變你的操作習慣與 Shell 腳本。
           </p>
           <div class="feature-code-pill">alias rm='~/.better-rm/better-rm'</div>
+        </div>
+
+        <!-- Feature 7: Flexible purge (by age and/or original path) -->
+        <div class="feature-card">
+          <div class="feature-icon-wrapper">🧹</div>
+          <h3 class="feature-card-title" data-i18n="feat7_title">彈性清除過期項目</h3>
+          <p class="feature-card-desc" data-i18n="feat7_desc">
+            用 <code>rm --purge</code> 依天數（<code>30</code>）、週（<code>2w</code>）、月（<code>3m</code>）或指定日期時間永久清除舊項目，也可用 <code>--purge-path</code> 只清除原本位於某目錄之下的項目；確認前先列出完整清單，並同步清掉對應的刪除日誌記錄。
+          </p>
+          <div class="feature-code-pill">rm --purge 2w --purge-path .</div>
+        </div>
+
+        <!-- Feature 8: List & stats -->
+        <div class="feature-card">
+          <div class="feature-icon-wrapper">📊</div>
+          <h3 class="feature-card-title" data-i18n="feat8_title">列出與摘要統計</h3>
+          <p class="feature-card-desc" data-i18n="feat8_desc">
+            <code>rm --list</code> 列出每個項目的刪除時間、大小與原始路徑；<code>rm --stats</code> 顯示總量、時間分佈與佔用空間前五名的目錄，先看清楚再決定清什麼。
+          </p>
+          <div class="feature-code-pill">rm --list  /  rm --stats</div>
         </div>
       </div>
     </div>
@@ -1688,6 +1718,31 @@ alias rm='better-rm'</pre>
               <td><code>rm -f --restore config.json</code></td>
             </tr>
             <tr>
+              <td><code>--purge &lt;age|date&gt;</code></td>
+              <td data-i18n="opt_purge_desc"><strong>[專屬功能]</strong> 永久刪除垃圾桶中過舊的項目並清除對應日誌；支援 <code>30</code>、<code>30d</code>、<code>2w</code>、<code>3m</code> 或日期時間，會先列出清單再確認（加 -f 不提示）</td>
+              <td><code>rm --purge 30</code><br><code>rm --purge 2w</code><br><code>rm --purge "2026-01-31 14:30"</code></td>
+            </tr>
+            <tr>
+              <td><code>--purge-path &lt;path&gt;</code></td>
+              <td data-i18n="opt_purge_path_desc"><strong>[專屬功能]</strong> 依「原始路徑」前綴永久刪除垃圾桶項目，可重複指定，並可與 <code>--purge</code> 並用（兩個條件都要符合）</td>
+              <td><code>rm --purge-path ~/projects/old-app</code><br><code>rm --purge 2w --purge-path .</code></td>
+            </tr>
+            <tr>
+              <td><code>--dry-run</code></td>
+              <td data-i18n="opt_dry_desc">搭配 <code>--purge</code> / <code>--purge-path</code>：只列出預計刪除的項目、可釋放空間與預計清除的日誌筆數，不實際刪除</td>
+              <td><code>rm --purge 30 --dry-run</code></td>
+            </tr>
+            <tr>
+              <td><code>--list</code></td>
+              <td data-i18n="opt_list_desc"><strong>[專屬功能]</strong> 列出垃圾桶中的項目（刪除時間、大小、類型、原始路徑）與總計；可用 <code>--purge</code> / <code>--purge-path</code> 篩選，不會刪除</td>
+              <td><code>rm --list</code><br><code>rm --list --purge 30</code></td>
+            </tr>
+            <tr>
+              <td><code>--stats</code></td>
+              <td data-i18n="opt_stats_desc"><strong>[專屬功能]</strong> 顯示垃圾桶摘要：項目數與類型、佔用空間、最早／最新刪除時間、依時間分佈與依目錄統計前五名</td>
+              <td><code>rm --stats</code></td>
+            </tr>
+            <tr>
               <td><code>--version / --help</code></td>
               <td data-i18n="opt_ver_desc">顯示 better-rm 版本資訊或完整說明手冊</td>
               <td><code>rm --version</code></td>
@@ -1783,6 +1838,11 @@ alias rm='better-rm'</pre>
               <td><span class="check-icon">✓</span> <span data-i18n="comp_r7_n">原生支援</span></td>
               <td class="highlight-col"><span class="check-icon">✓</span> <span data-i18n="comp_r7_b">100% 旗標支援 (-rf, -i, -v)</span></td>
             </tr>
+            <tr>
+              <td data-i18n="comp_row8">垃圾桶管理與清理</td>
+              <td><span class="cross-icon">✕</span> <span data-i18n="comp_r8_n">需自行搭配 find / du</span></td>
+              <td class="highlight-col"><span class="check-icon">✓</span> <span data-i18n="comp_r8_b">rm --list / --stats / --purge（可預覽）</span></td>
+            </tr>
           </tbody>
         </table>
       </div>
@@ -1809,7 +1869,7 @@ alias rm='better-rm'</pre>
         <div class="faq-card">
           <h3 class="faq-question"><span style="color: var(--primary);">Q:</span> <span data-i18n="faq_q2">如何清理或清空垃圾桶？</span></h3>
           <p class="faq-answer" data-i18n="faq_a2">
-            better-rm 預設不自動刪除垃圾桶內容，以確保最大的安全性。你可以透過 <code>ls -la ~/.Trash</code> 檢視，並在確認無誤後使用原生指令 <code>/bin/rm -rf ~/.Trash/*</code> 清空磁碟空間。
+            better-rm 預設不自動刪除垃圾桶內容，以確保最大的安全性。可用 <code>rm --stats</code> 了解佔用情況、<code>rm --list</code> 檢視項目，再用 <code>rm --purge 30 --dry-run</code> 預覽、<code>rm --purge 30</code> 永久清除 30 天前的項目（也支援 <code>2w</code>、<code>3m</code>、日期時間或 <code>--purge-path</code>），對應的刪除日誌記錄會一併清除。
           </p>
         </div>
 
@@ -1911,6 +1971,10 @@ alias rm='better-rm'</pre>
         feat5_desc: '在 ~/.local/state/better-rm/deletion.log 維護結構化日誌（遵循 XDG 規範），精確記錄每次刪除的時間、原路徑、垃圾桶路徑、雜湊與檔案類型。',
         feat6_title: '完全相容原生 rm 參數',
         feat6_desc: '支援 -r, -R, -f, -i, -I, -v 等所有常用旗標，無需改變你的操作習慣與 Shell 腳本。',
+        feat7_title: '彈性清除過期項目',
+        feat7_desc: '用 <code>rm --purge</code> 依天數（<code>30</code>）、週（<code>2w</code>）、月（<code>3m</code>）或指定日期時間永久清除舊項目，也可用 <code>--purge-path</code> 只清除原本位於某目錄之下的項目；確認前先列出完整清單，並同步清掉對應的刪除日誌記錄。',
+        feat8_title: '列出與摘要統計',
+        feat8_desc: '<code>rm --list</code> 列出每個項目的刪除時間、大小與原始路徑；<code>rm --stats</code> 顯示總量、時間分佈與佔用空間前五名的目錄，先看清楚再決定清什麼。',
         agent_tag: 'AI 代理安全防護',
         agent_title: '給 AI Coding Agent 最堅固的安全防護欄',
         agent_desc: '當 AI 自動化執行指令時，PreToolUse Hook 會在指令真正進入系統前即時攔截危險操作。',
@@ -1954,6 +2018,11 @@ alias rm='better-rm'</pre>
         opt_v_desc: '顯示詳細操作過程（彩色打印搬移來源與目的）',
         opt_restore_desc: '<strong>[專屬功能]</strong> 自動將最後刪除的檔案還原至目前目錄',
         opt_restore_f_desc: '還原檔案，若目前資料夾有同名檔案直接覆蓋不提示',
+        opt_purge_desc: '<strong>[專屬功能]</strong> 永久刪除垃圾桶中過舊的項目並清除對應日誌；支援 <code>30</code>、<code>30d</code>、<code>2w</code>、<code>3m</code> 或日期時間，會先列出清單再確認（加 -f 不提示）',
+        opt_purge_path_desc: '<strong>[專屬功能]</strong> 依「原始路徑」前綴永久刪除垃圾桶項目，可重複指定，並可與 <code>--purge</code> 並用（兩個條件都要符合）',
+        opt_dry_desc: '搭配 <code>--purge</code> / <code>--purge-path</code>：只列出預計刪除的項目、可釋放空間與預計清除的日誌筆數，不實際刪除',
+        opt_list_desc: '<strong>[專屬功能]</strong> 列出垃圾桶中的項目（刪除時間、大小、類型、原始路徑）與總計；可用 <code>--purge</code> / <code>--purge-path</code> 篩選，不會刪除',
+        opt_stats_desc: '<strong>[專屬功能]</strong> 顯示垃圾桶摘要：項目數與類型、佔用空間、最早／最新刪除時間、依時間分佈與依目錄統計前五名',
         opt_ver_desc: '顯示 better-rm 版本資訊或完整說明手冊',
         env_table_title: '🛠️ 環境變數設定',
         th_env: '環境變數',
@@ -1989,13 +2058,16 @@ alias rm='better-rm'</pre>
         comp_row7: '原生指令參數相容性',
         comp_r7_n: '原生支援',
         comp_r7_b: '100% 旗標支援 (-rf, -i, -v)',
+        comp_row8: '垃圾桶管理與清理',
+        comp_r8_n: '需自行搭配 find / du',
+        comp_r8_b: 'rm --list / --stats / --purge（可預覽）',
         faq_tag: '常見問題',
         faq_title: '問與答',
         faq_desc: '關於 better-rm 的運作方式、安全性與日常維護技巧。',
         faq_q1: 'better-rm 會覆蓋系統的 /bin/rm 嗎？',
         faq_a1: '不會。預設推薦的安裝方式僅透過 Shell 的 alias rm=... 進行別名替代。系統自帶的 /bin/rm 完全不受影響，當你必須使用原生指令時，隨時可透過 /bin/rm 或 \\rm 執行。',
         faq_q2: '如何清理或清空垃圾桶？',
-        faq_a2: 'better-rm 預設不自動刪除垃圾桶內容，以確保最大的安全性。你可以透過 ls -la ~/.Trash 檢視，並在確認無誤後使用原生指令 /bin/rm -rf ~/.Trash/* 清空磁碟空間。',
+        faq_a2: 'better-rm 預設不自動刪除垃圾桶內容，以確保最大的安全性。可用 <code>rm --stats</code> 了解佔用情況、<code>rm --list</code> 檢視項目，再用 <code>rm --purge 30 --dry-run</code> 預覽、<code>rm --purge 30</code> 永久清除 30 天前的項目（也支援 <code>2w</code>、<code>3m</code>、日期時間或 <code>--purge-path</code>），對應的刪除日誌記錄會一併清除。',
         faq_q3: '檔案名稱衝突時怎麼處理？',
         faq_a3: '移入垃圾桶時，better-rm 會自動將檔名附加上奈秒級時間戳記與 MD5 內容雜湊（例如 file.txt__20260819_143052_123456789__hash），保證即使在一毫秒內刪除多個同名檔案也不會互相覆蓋。',
         faq_q4: 'AI Agent Hook 是如何保護終端機的？',
@@ -2043,6 +2115,10 @@ alias rm='better-rm'</pre>
         feat5_desc: '在 ~/.local/state/better-rm/deletion.log 维护结构化日志（遵循 XDG 规范），精确记录每次删除的时间、原路径、回收站路径、哈希与文件类型。',
         feat6_title: '完全兼容原生 rm 参数',
         feat6_desc: '支持 -r, -R, -f, -i, -I, -v 等所有常用选项，无需改变你的操作习惯与脚本。',
+        feat7_title: '灵活清除过期项目',
+        feat7_desc: '使用 <code>rm --purge</code> 按天数（<code>30</code>）、周（<code>2w</code>）、月（<code>3m</code>）或指定日期时间永久清除旧项目，也可用 <code>--purge-path</code> 只清除原本位于某目录之下的项目；确认前先列出完整清单，并同步清除对应的删除日志记录。',
+        feat8_title: '列出与摘要统计',
+        feat8_desc: '<code>rm --list</code> 列出每个项目的删除时间、大小与原始路径；<code>rm --stats</code> 显示总量、时间分布与占用空间前五名的目录，先看清楚再决定清理什么。',
         agent_tag: 'AI 代理安全防护',
         agent_title: '给 AI Coding Agent 最坚固的安全护栏',
         agent_desc: '当 AI 自动化执行指令时，PreToolUse Hook 会在指令进入系统前即时拦截危险操作。',
@@ -2086,6 +2162,11 @@ alias rm='better-rm'</pre>
         opt_v_desc: '显示详细操作过程（彩色打印移动源与目标）',
         opt_restore_desc: '<strong>[专属功能]</strong> 自动将最后删除的文件还原至当前目录',
         opt_restore_f_desc: '还原文件，若当前文件夹有同名文件直接覆盖不提示',
+        opt_purge_desc: '<strong>[专属功能]</strong> 永久删除回收站中过旧的项目并清除对应日志；支持 <code>30</code>、<code>30d</code>、<code>2w</code>、<code>3m</code> 或日期时间，会先列出清单再确认（加 -f 不提示）',
+        opt_purge_path_desc: '<strong>[专属功能]</strong> 按“原始路径”前缀永久删除回收站项目，可重复指定，并可与 <code>--purge</code> 并用（两个条件都要符合）',
+        opt_dry_desc: '搭配 <code>--purge</code> / <code>--purge-path</code>：只列出预计删除的项目、可释放空间与预计清除的日志条数，不实际删除',
+        opt_list_desc: '<strong>[专属功能]</strong> 列出回收站中的项目（删除时间、大小、类型、原始路径）与总计；可用 <code>--purge</code> / <code>--purge-path</code> 筛选，不会删除',
+        opt_stats_desc: '<strong>[专属功能]</strong> 显示回收站摘要：项目数与类型、占用空间、最早/最新删除时间、按时间分布与按目录统计前五名',
         opt_ver_desc: '显示 better-rm 版本信息或完整说明手册',
         env_table_title: '🛠️ 环境变量设置',
         th_env: '环境变量',
@@ -2121,13 +2202,16 @@ alias rm='better-rm'</pre>
         comp_row7: '原生指令参数兼容性',
         comp_r7_n: '原生支持',
         comp_r7_b: '100% 选项支持 (-rf, -i, -v)',
+        comp_row8: '回收站管理与清理',
+        comp_r8_n: '需自行搭配 find / du',
+        comp_r8_b: 'rm --list / --stats / --purge（可预览）',
         faq_tag: '常见问题',
         faq_title: '问与答',
         faq_desc: '关于 better-rm 的运行方式、安全性与日常维护技巧。',
         faq_q1: 'better-rm 会覆盖系统的 /bin/rm 吗？',
         faq_a1: '不会。推荐的安装方式仅通过 Shell 的 alias rm=... 进行别名替换。系统自带的 /bin/rm 完全不受影响，需要时随时可通过 /bin/rm 或 \\rm 执行。',
         faq_q2: '如何清理或清空回收站？',
-        faq_a2: 'better-rm 默认不自动删除回收站内容以保安全。你可以通过 ls -la ~/.Trash 查看，并在确认无误后使用原生 /bin/rm -rf ~/.Trash/* 清空。',
+        faq_a2: 'better-rm 默认不自动删除回收站内容以保安全。可用 <code>rm --stats</code> 了解占用情况、<code>rm --list</code> 查看项目，再用 <code>rm --purge 30 --dry-run</code> 预览、<code>rm --purge 30</code> 永久清除 30 天前的项目（也支持 <code>2w</code>、<code>3m</code>、日期时间或 <code>--purge-path</code>），对应的删除日志记录会一并清除。',
         faq_q3: '文件名冲突时怎么处理？',
         faq_a3: '移入回收站时，better-rm 会自动附加上纳秒时间戳与 MD5 哈希（例如 file.txt__20260819_143052_123456789__hash），确保毫秒级内删除同名文件也不会覆盖。',
         faq_q4: 'AI Agent Hook 是如何保护终端的？',
@@ -2175,6 +2259,10 @@ alias rm='better-rm'</pre>
         feat5_desc: 'Maintains an XDG-compliant structured log at ~/.local/state/better-rm/deletion.log recording timestamps, original paths, trash paths, hashes, and file types.',
         feat6_title: '100% POSIX rm Compatible',
         feat6_desc: 'Supports -r, -R, -f, -i, -I, -v without breaking your terminal habits, workflows, or shell scripts.',
+        feat7_title: 'Flexible purge of old items',
+        feat7_desc: 'Use <code>rm --purge</code> to permanently remove old items by days (<code>30</code>), weeks (<code>2w</code>), months (<code>3m</code>) or an exact date/time, and add <code>--purge-path</code> to target only what used to live under a directory. It lists everything before asking to confirm and prunes the matching deletion log records.',
+        feat8_title: 'List and summary statistics',
+        feat8_desc: '<code>rm --list</code> shows each item with its deletion time, size and original path; <code>rm --stats</code> summarizes totals, age distribution and the top directories by size, so you can see before you purge.',
         agent_tag: 'AI Agent Safety',
         agent_title: 'Guardrails for Autonomous AI Coding Agents',
         agent_desc: 'Intercepts Bash / command tools before execution to prevent catastrophic accidental deletions.',
@@ -2219,6 +2307,11 @@ alias rm='better-rm'</pre>
         opt_v_desc: 'Explain what is being done (verbose colored output)',
         opt_restore_desc: '<strong>[Exclusive]</strong> Automatically restores the latest deleted file to current directory',
         opt_restore_f_desc: 'Restore file, overwrite destination without prompt if exists',
+        opt_purge_desc: '<strong>[Exclusive]</strong> Permanently delete old trash items and prune their log records; accepts <code>30</code>, <code>30d</code>, <code>2w</code>, <code>3m</code> or a date/time. Lists items before confirming (-f skips)',
+        opt_purge_path_desc: '<strong>[Exclusive]</strong> Permanently delete trash items by original path prefix; repeatable, and combinable with <code>--purge</code> (both must match)',
+        opt_dry_desc: 'With <code>--purge</code> / <code>--purge-path</code>: only list the items, space and log records that would be removed, without deleting',
+        opt_list_desc: '<strong>[Exclusive]</strong> List trash items (deletion time, size, type, original path) with totals; filter with <code>--purge</code> / <code>--purge-path</code>, nothing is deleted',
+        opt_stats_desc: '<strong>[Exclusive]</strong> Show a trash summary: item counts and types, disk usage, oldest/newest deletion, age distribution and top 5 directories by size',
         opt_ver_desc: 'Display version information or full help manual',
         env_table_title: '🛠️ Environment Variables',
         th_env: 'Variable',
@@ -2254,13 +2347,16 @@ alias rm='better-rm'</pre>
         comp_row7: 'POSIX CLI Flag Compatibility',
         comp_r7_n: 'Native',
         comp_r7_b: '100% compatible (-rf, -i, -v)',
+        comp_row8: 'Trash management and cleanup',
+        comp_r8_n: 'Roll your own with find / du',
+        comp_r8_b: 'rm --list / --stats / --purge (with preview)',
         faq_tag: 'FAQ',
         faq_title: 'Frequently Asked Questions',
         faq_desc: 'Everything you need to know about better-rm safety and operations.',
         faq_q1: 'Does better-rm overwrite the system /bin/rm binary?',
         faq_a1: 'No. The recommended installation uses shell aliases (alias rm=...). The native /bin/rm binary is untouched and accessible anytime via /bin/rm or \\rm.',
         faq_q2: 'How do I clean or empty the Trash?',
-        faq_a2: 'better-rm never automatically deletes files in Trash for safety. Inspect it with ls -la ~/.Trash and empty safely when needed using /bin/rm -rf ~/.Trash/*.',
+        faq_a2: 'better-rm never deletes Trash contents automatically, for safety. Use <code>rm --stats</code> to see what is taking space, <code>rm --list</code> to inspect items, <code>rm --purge 30 --dry-run</code> to preview and <code>rm --purge 30</code> to permanently remove items older than 30 days (also <code>2w</code>, <code>3m</code>, a date/time, or <code>--purge-path</code>). Matching deletion log records are removed too.',
         faq_q3: 'How are name collisions handled?',
         faq_a3: 'better-rm appends nanosecond timestamps and MD5 hashes (e.g. file.txt__20260819_143052_123456789__hash) to guarantee zero file overwrite collisions in Trash.',
         faq_q4: 'How does the AI Agent hook work?',
@@ -2308,6 +2404,10 @@ alias rm='better-rm'</pre>
         feat5_desc: '~/.local/state/better-rm/deletion.log にタイムスタンプ、元のパス、ゴミ箱パス、ハッシュを記録します。',
         feat6_title: 'POSIX rm オプションに完全対応',
         feat6_desc: '-r, -R, -f, -i, -I, -v をサポートしており、これまでの操作習慣やスクリプトをそのまま利用できます。',
+        feat7_title: '期限切れ項目の柔軟な削除',
+        feat7_desc: '<code>rm --purge</code> で日数（<code>30</code>）、週（<code>2w</code>）、月（<code>3m</code>）または日時を指定して古い項目を完全削除でき、<code>--purge-path</code> を加えると元々あるディレクトリ配下にあった項目だけを対象にできます。確認前に一覧を表示し、対応する削除ログの記録も整理します。',
+        feat8_title: '一覧表示とサマリー統計',
+        feat8_desc: '<code>rm --list</code> は各項目の削除日時・サイズ・元のパスを表示し、<code>rm --stats</code> は合計、期間別の分布、容量上位のディレクトリを表示します。削除前に状況を確認できます。',
         agent_tag: 'AI エージェント保護',
         agent_title: 'AI コーディングエージェントのための安全ガードレール',
         agent_desc: 'AI が自動実行する前に危険なファイル削除操作をリアルタイムに検知・拒否します。',
@@ -2352,6 +2452,11 @@ alias rm='better-rm'</pre>
         opt_v_desc: '操作の詳細（移動元・移動先）をカラー出力',
         opt_restore_desc: '<strong>[独自機能]</strong> 最後に削除したファイルを現在地に自動復元',
         opt_restore_f_desc: '同名ファイルがあっても確認なしで上書き復元',
+        opt_purge_desc: '<strong>[専用機能]</strong> 古いゴミ箱項目を完全に削除し、対応するログ記録も整理します。<code>30</code>、<code>30d</code>、<code>2w</code>、<code>3m</code> または日時を指定でき、確認前に一覧を表示します（-f で省略）',
+        opt_purge_path_desc: '<strong>[専用機能]</strong> 元のパスのプレフィックスでゴミ箱項目を完全削除。複数指定可能で、<code>--purge</code> と併用（両方の条件に一致したものだけ）できます',
+        opt_dry_desc: '<code>--purge</code> / <code>--purge-path</code> と併用：削除対象の項目、解放される容量、整理されるログ件数を表示するだけで、実際には削除しません',
+        opt_list_desc: '<strong>[専用機能]</strong> ゴミ箱の項目（削除日時・サイズ・種類・元のパス）と合計を一覧表示。<code>--purge</code> / <code>--purge-path</code> で絞り込め、削除は行いません',
+        opt_stats_desc: '<strong>[専用機能]</strong> ゴミ箱のサマリーを表示：項目数と種類、使用容量、最古／最新の削除日時、期間別の分布、容量上位 5 ディレクトリ',
         opt_ver_desc: 'バージョン情報またはヘルプマニュアルを表示',
         env_table_title: '🛠️ 環境変数一覧',
         th_env: '環境変数',
@@ -2387,13 +2492,16 @@ alias rm='better-rm'</pre>
         comp_row7: 'POSIX オプション互換性',
         comp_r7_n: '標準対応',
         comp_r7_b: '100% 互換 (-rf, -i, -v)',
+        comp_row8: 'ゴミ箱の管理とクリーンアップ',
+        comp_r8_n: 'find / du を自分で組み合わせる',
+        comp_r8_b: 'rm --list / --stats / --purge（プレビュー対応）',
         faq_tag: 'よくある質問',
         faq_title: 'FAQ',
         faq_desc: 'better-rm の安全性と日常的な使い方について。',
         faq_q1: 'better-rm は /bin/rm を直接上書きしますか？',
         faq_a1: 'いいえ。Shell の alias rm=... によるエイリアス動作です。システムの /bin/rm はそのまま保持され、必要時は /bin/rm や \\rm で呼び出せます。',
         faq_q2: 'ゴミ箱を空にするにはどうすれば良いですか？',
-        faq_a2: '安全のため自動消去は行いません。ls -la ~/.Trash で確認後、/bin/rm -rf ~/.Trash/* で手動削除してください。',
+        faq_a2: '安全のため自動消去は行いません。<code>rm --stats</code> で使用状況を確認し、<code>rm --list</code> で項目を確認、<code>rm --purge 30 --dry-run</code> でプレビューしてから <code>rm --purge 30</code> で 30 日より古い項目を完全削除できます（<code>2w</code>、<code>3m</code>、日時、<code>--purge-path</code> も指定可能）。対応する削除ログの記録も整理されます。',
         faq_q3: '同名ファイルが衝突した場合はどうなりますか？',
         faq_a3: 'ナノ秒タイムスタンプと MD5 ハッシュ（例: file.txt__20260819_143052_123456789__hash）が付与されるため、上書き事故は発生しません。',
         faq_q4: 'AI Agent フックはどのように動作しますか？',
@@ -2441,6 +2549,10 @@ alias rm='better-rm'</pre>
         feat5_desc: '~/.local/state/better-rm/deletion.log에 타임스탬프, 원본 경로, 휴지통 경로, 해시를 투명하게 기록합니다.',
         feat6_title: 'POSIX rm 옵션 100% 호환',
         feat6_desc: '-r, -R, -f, -i, -I, -v 등 표준 옵션을 그대로 지원하여 기존 습관과 셸 스크립트를 변경할 필요가 없습니다.',
+        feat7_title: '유연한 오래된 항목 정리',
+        feat7_desc: '<code>rm --purge</code>로 일수(<code>30</code>), 주(<code>2w</code>), 개월(<code>3m</code>) 또는 날짜·시간을 지정해 오래된 항목을 영구 삭제하고, <code>--purge-path</code>를 더하면 원래 특정 디렉터리 아래에 있던 항목만 대상으로 할 수 있습니다. 확인 전에 전체 목록을 보여 주고, 해당 삭제 로그 기록도 함께 정리합니다.',
+        feat8_title: '목록 보기와 요약 통계',
+        feat8_desc: '<code>rm --list</code>는 각 항목의 삭제 시각, 크기, 원래 경로를 보여 주고, <code>rm --stats</code>는 총량, 기간별 분포, 용량 상위 디렉터리를 요약합니다. 정리 전에 먼저 확인하세요.',
         agent_tag: 'AI 에이전트 보호',
         agent_title: 'AI Coding Agent를 위한 든든한 안전 가드레일',
         agent_desc: 'AI가 자동화 명령을 실행하기 직전 위험한 삭제 작업을 실시간으로 인터셉트하여 방어합니다.',
@@ -2485,6 +2597,11 @@ alias rm='better-rm'</pre>
         opt_v_desc: '상세 작업 과정(이동 경로)을 컬러로 출력',
         opt_restore_desc: '<strong>[전용 기능]</strong> 마지막으로 삭제한 파일을 현재 위치로 자동 복원',
         opt_restore_f_desc: '동명 파일이 존재해도 확인 없이 덮어쓰며 복원',
+        opt_purge_desc: '<strong>[전용 기능]</strong> 오래된 휴지통 항목을 영구 삭제하고 해당 로그 기록도 정리합니다. <code>30</code>, <code>30d</code>, <code>2w</code>, <code>3m</code> 또는 날짜·시간을 지원하며 확인 전에 목록을 보여 줍니다(-f 로 생략)',
+        opt_purge_path_desc: '<strong>[전용 기능]</strong> 원래 경로 접두사로 휴지통 항목을 영구 삭제합니다. 반복 지정 가능하며 <code>--purge</code>와 함께 쓰면 두 조건을 모두 만족하는 항목만 삭제됩니다',
+        opt_dry_desc: '<code>--purge</code> / <code>--purge-path</code>와 함께 사용: 삭제될 항목, 확보될 공간, 정리될 로그 수만 보여 주고 실제로 삭제하지 않습니다',
+        opt_list_desc: '<strong>[전용 기능]</strong> 휴지통 항목(삭제 시각, 크기, 유형, 원래 경로)과 합계를 나열합니다. <code>--purge</code> / <code>--purge-path</code>로 필터링할 수 있으며 삭제하지 않습니다',
+        opt_stats_desc: '<strong>[전용 기능]</strong> 휴지통 요약 표시: 항목 수와 유형, 사용 용량, 가장 오래된/최근 삭제 시각, 기간별 분포, 용량 상위 5개 디렉터리',
         opt_ver_desc: '버전 정보 또는 전체 도움말 매뉴얼 출력',
         env_table_title: '🛠️ 환경변수 설정',
         th_env: '환경변수',
@@ -2520,13 +2637,16 @@ alias rm='better-rm'</pre>
         comp_row7: 'POSIX 플래그 호환성',
         comp_r7_n: '기본 지원',
         comp_r7_b: '100% 호환 (-rf, -i, -v)',
+        comp_row8: '휴지통 관리 및 정리',
+        comp_r8_n: 'find / du 를 직접 조합해야 함',
+        comp_r8_b: 'rm --list / --stats / --purge (미리보기 지원)',
         faq_tag: '자주 묻는 질문',
         faq_title: 'FAQ',
         faq_desc: 'better-rm의 동작 원리와 안전성 및 팁.',
         faq_q1: 'better-rm이 시스템의 /bin/rm 바이너리를 덮어쓰나요?',
         faq_a1: '아닙니다. 셸의 alias rm=... 별칭을 사용하므로 시스템 /bin/rm은 온전히 유지되며, 필요시 /bin/rm 또는 \\rm으로 언제든 실행할 수 있습니다.',
         faq_q2: '휴지통은 어떻게 비우나요?',
-        faq_a2: '안전을 위해 자동으로 비우지 않습니다. ls -la ~/.Trash로 확인 후 /bin/rm -rf ~/.Trash/* 명령어로 수동 정리할 수 있습니다.',
+        faq_a2: '안전을 위해 자동으로 비우지 않습니다. <code>rm --stats</code>로 사용량을 확인하고 <code>rm --list</code>로 항목을 살펴본 뒤, <code>rm --purge 30 --dry-run</code>으로 미리 보고 <code>rm --purge 30</code>으로 30일 지난 항목을 영구 삭제할 수 있습니다(<code>2w</code>, <code>3m</code>, 날짜·시간, <code>--purge-path</code>도 지원). 해당 삭제 로그 기록도 함께 정리됩니다.',
         faq_q3: '동일한 이름의 파일 충돌은 어떻게 처리되나요?',
         faq_a3: '나노초 타임스탬프와 MD5 해시(예: file.txt__20260819_143052_123456789__hash)가 자동 부여되어 중복 덮어쓰기 위험이 없습니다.',
         faq_q4: 'AI Agent Hook은 어떻게 동작하나요?',
@@ -2574,6 +2694,10 @@ alias rm='better-rm'</pre>
         feat5_desc: 'Ghi lại lịch sử chi tiết tại ~/.local/state/better-rm/deletion.log theo chuẩn XDG.',
         feat6_title: 'Tương thích 100% cờ lệnh rm',
         feat6_desc: 'Hỗ trợ đầy đủ các cờ -r, -R, -f, -i, -I, -v mà không làm thay đổi thói quen dùng lệnh của bạn.',
+        feat7_title: 'Dọn linh hoạt các mục cũ',
+        feat7_desc: 'Dùng <code>rm --purge</code> để xóa vĩnh viễn mục cũ theo số ngày (<code>30</code>), tuần (<code>2w</code>), tháng (<code>3m</code>) hoặc mốc ngày giờ cụ thể, và thêm <code>--purge-path</code> để chỉ nhắm tới các mục từng nằm dưới một thư mục. Danh sách đầy đủ được hiển thị trước khi xác nhận, đồng thời dọn các bản ghi nhật ký xóa tương ứng.',
+        feat8_title: 'Liệt kê và thống kê tóm tắt',
+        feat8_desc: '<code>rm --list</code> hiển thị thời điểm xóa, kích thước và đường dẫn gốc của từng mục; <code>rm --stats</code> tóm tắt tổng số, phân bố theo thời gian và các thư mục chiếm nhiều dung lượng nhất, giúp bạn xem rõ trước khi dọn.',
         agent_tag: 'Bảo vệ AI Agent',
         agent_title: 'Lá chắn an toàn cho các AI Coding Agent',
         agent_desc: 'Ngăn chặn tự động các hành vi xóa tệp phá hoại trước khi lệnh Bash được thực thi.',
@@ -2618,6 +2742,11 @@ alias rm='better-rm'</pre>
         opt_v_desc: 'Hiển thị chi tiết thao tác di chuyển bằng màu sắc',
         opt_restore_desc: '<strong>[Độc quyền]</strong> Tự động khôi phục tệp bị xóa gần nhất',
         opt_restore_f_desc: 'Khôi phục và ghi đè nếu tệp đích đã tồn tại',
+        opt_purge_desc: '<strong>[Độc quyền]</strong> Xóa vĩnh viễn các mục cũ trong thùng rác và dọn bản ghi nhật ký tương ứng; hỗ trợ <code>30</code>, <code>30d</code>, <code>2w</code>, <code>3m</code> hoặc ngày giờ, liệt kê trước khi xác nhận (-f để bỏ qua)',
+        opt_purge_path_desc: '<strong>[Độc quyền]</strong> Xóa vĩnh viễn mục trong thùng rác theo tiền tố đường dẫn gốc; có thể lặp lại và kết hợp với <code>--purge</code> (phải thỏa cả hai điều kiện)',
+        opt_dry_desc: 'Dùng với <code>--purge</code> / <code>--purge-path</code>: chỉ liệt kê mục, dung lượng và số bản ghi nhật ký sẽ bị xóa, không xóa thật',
+        opt_list_desc: '<strong>[Độc quyền]</strong> Liệt kê các mục trong thùng rác (thời điểm xóa, kích thước, loại, đường dẫn gốc) kèm tổng; lọc bằng <code>--purge</code> / <code>--purge-path</code>, không xóa gì',
+        opt_stats_desc: '<strong>[Độc quyền]</strong> Hiển thị tóm tắt thùng rác: số mục và loại, dung lượng, lần xóa cũ nhất/mới nhất, phân bố theo thời gian và 5 thư mục lớn nhất',
         opt_ver_desc: 'Hiển thị phiên bản hoặc hướng dẫn sử dụng',
         env_table_title: '🛠️ Biến môi trường',
         th_env: 'Biến',
@@ -2653,13 +2782,16 @@ alias rm='better-rm'</pre>
         comp_row7: 'Tương thích cờ lệnh POSIX',
         comp_r7_n: 'Gốc',
         comp_r7_b: 'Tương thích 100% (-rf, -i, -v)',
+        comp_row8: 'Quản lý và dọn dẹp thùng rác',
+        comp_r8_n: 'Tự kết hợp find / du',
+        comp_r8_b: 'rm --list / --stats / --purge (có xem trước)',
         faq_tag: 'Hỏi đáp',
         faq_title: 'Câu hỏi thường gặp',
         faq_desc: 'Mọi điều bạn cần biết về độ an toàn và cách sử dụng better-rm.',
         faq_q1: 'better-rm có ghi đè tệp /bin/rm gốc của hệ thống không?',
         faq_a1: 'Không. better-rm chỉ sử dụng alias rm=... trong shell. Tệp /bin/rm gốc vẫn nguyên vẹn và có thể dùng qua /bin/rm hoặc \\rm.',
         faq_q2: 'Làm thế nào để dọn sạch Thùng rác?',
-        faq_a2: 'better-rm không tự ý xóa thùng rác để đảm bảo an toàn. Bạn có thể kiểm tra qua ls -la ~/.Trash và xóa bằng /bin/rm -rf ~/.Trash/*.',
+        faq_a2: 'Vì an toàn, better-rm không tự động xóa nội dung thùng rác. Dùng <code>rm --stats</code> để xem dung lượng, <code>rm --list</code> để xem các mục, <code>rm --purge 30 --dry-run</code> để xem trước và <code>rm --purge 30</code> để xóa vĩnh viễn mục cũ hơn 30 ngày (cũng hỗ trợ <code>2w</code>, <code>3m</code>, ngày giờ hoặc <code>--purge-path</code>). Các bản ghi nhật ký xóa tương ứng cũng được dọn.',
         faq_q3: 'Xử lý xung đột tên tệp như thế nào?',
         faq_a3: 'better-rm tự động gắn thêm dấu thời gian nano và mã băm MD5 để không bao giờ bị ghi đè tệp trùng tên trong thùng rác.',
         faq_q4: 'Hook AI Agent hoạt động thế nào?',
@@ -2707,6 +2839,10 @@ alias rm='better-rm'</pre>
         feat5_desc: 'บันทึกข้อมูลที่ ~/.local/state/better-rm/deletion.log ตามมาตรฐาน XDG',
         feat6_title: 'รองรับพารามิเตอร์ rm เดิม 100%',
         feat6_desc: 'รองรับ -r, -R, -f, -i, -I, -v ครบถ้วน ไม่ต้องเปลี่ยนความเคยชินในการใช้งาน',
+        feat7_title: 'ล้างรายการเก่าอย่างยืดหยุ่น',
+        feat7_desc: 'ใช้ <code>rm --purge</code> ลบรายการเก่าถาวรตามจำนวนวัน (<code>30</code>) สัปดาห์ (<code>2w</code>) เดือน (<code>3m</code>) หรือวันที่และเวลาที่ระบุ และเพิ่ม <code>--purge-path</code> เพื่อเจาะจงเฉพาะรายการที่เดิมอยู่ใต้ไดเรกทอรีหนึ่ง โดยจะแสดงรายการทั้งหมดก่อนขอยืนยัน และล้างบันทึกในล็อกการลบที่เกี่ยวข้องให้ด้วย',
+        feat8_title: 'แสดงรายการและสถิติสรุป',
+        feat8_desc: '<code>rm --list</code> แสดงเวลาที่ลบ ขนาด และพาธเดิมของแต่ละรายการ ส่วน <code>rm --stats</code> สรุปจำนวนรวม การกระจายตามช่วงเวลา และไดเรกทอรีที่ใช้พื้นที่มากที่สุด เพื่อให้ดูให้ชัดก่อนตัดสินใจล้าง',
         agent_tag: 'ความปลอดภัย AI',
         agent_title: 'ระบบป้องกันสำหรับ AI Coding Agent',
         agent_desc: 'ตรวจสอบและสกัดกั้นคำสั่งลบไฟล์ที่อันตรายก่อนที่ระบบจะทำงานจริง',
@@ -2751,6 +2887,11 @@ alias rm='better-rm'</pre>
         opt_v_desc: 'แสดงรายละเอียดการย้ายไฟล์พร้อมสีสัน',
         opt_restore_desc: '<strong>[ฟังก์ชันพิเศษ]</strong> กู้คืนไฟล์ที่เพิ่งลบล่าสุดกลับมายังโฟลเดอร์ปัจจุบัน',
         opt_restore_f_desc: 'กู้คืนและเขียนทับไฟล์เดิมทันทีโดยไม่ถามซ้ำ',
+        opt_purge_desc: '<strong>[เฉพาะ better-rm]</strong> ลบรายการเก่าในถังขยะถาวรและล้างบันทึกล็อกที่เกี่ยวข้อง รองรับ <code>30</code>, <code>30d</code>, <code>2w</code>, <code>3m</code> หรือวันที่เวลา และแสดงรายการก่อนยืนยัน (ใส่ -f เพื่อข้าม)',
+        opt_purge_path_desc: '<strong>[เฉพาะ better-rm]</strong> ลบรายการในถังขยะถาวรตามพรีฟิกซ์ของพาธเดิม ระบุซ้ำได้ และใช้ร่วมกับ <code>--purge</code> ได้ (ต้องตรงทั้งสองเงื่อนไข)',
+        opt_dry_desc: 'ใช้ร่วมกับ <code>--purge</code> / <code>--purge-path</code>: แสดงเฉพาะรายการ พื้นที่ และจำนวนบันทึกล็อกที่จะถูกลบ โดยไม่ลบจริง',
+        opt_list_desc: '<strong>[เฉพาะ better-rm]</strong> แสดงรายการในถังขยะ (เวลาที่ลบ ขนาด ประเภท พาธเดิม) พร้อมยอดรวม กรองด้วย <code>--purge</code> / <code>--purge-path</code> ได้ และจะไม่ลบอะไร',
+        opt_stats_desc: '<strong>[เฉพาะ better-rm]</strong> แสดงสรุปถังขยะ: จำนวนและประเภทรายการ พื้นที่ที่ใช้ เวลาลบเก่าสุด/ใหม่สุด การกระจายตามช่วงเวลา และ 5 ไดเรกทอรีที่ใหญ่ที่สุด',
         opt_ver_desc: 'แสดงเวอร์ชันหรือคู่มือช่วยเหลือ',
         env_table_title: '🛠️ ตัวแปรสภาพแวดล้อม',
         th_env: 'ตัวแปร',
@@ -2786,13 +2927,16 @@ alias rm='better-rm'</pre>
         comp_row7: 'ความเข้ากันได้ของคำสั่ง',
         comp_r7_n: 'มาตรฐาน',
         comp_r7_b: 'รองรับ 100% (-rf, -i, -v)',
+        comp_row8: 'การจัดการและล้างถังขยะ',
+        comp_r8_n: 'ต้องประกอบ find / du เอง',
+        comp_r8_b: 'rm --list / --stats / --purge (ดูตัวอย่างก่อนได้)',
         faq_tag: 'คำถามที่พบบ่อย',
         faq_title: 'FAQ',
         faq_desc: 'ข้อมูลสำคัญเกี่ยวกับความปลอดภัยและการใช้งาน better-rm',
         faq_q1: 'better-rm จะไปเขียนทับ /bin/rm ของระบบหรือไม่?',
         faq_a1: 'ไม่ การติดตั้งมาตรฐานใช้เพียง alias rm=... เท่านั้น /bin/rm เดิมยังคงอยู่และสามารถเรียกใช้ได้ตลอดเวลาด้วย /bin/rm หรือ \\rm',
         faq_q2: 'วิธีล้างถังขยะทำอย่างไร?',
-        faq_a2: 'better-rm จะไม่ลบไฟล์ในถังขยะเองเพื่อความปลอดภัย คุณสามารถตรวจดูด้วย ls -la ~/.Trash และล้างด้วย /bin/rm -rf ~/.Trash/*',
+        faq_a2: 'เพื่อความปลอดภัย better-rm จะไม่ลบเนื้อหาในถังขยะอัตโนมัติ ใช้ <code>rm --stats</code> ดูการใช้พื้นที่ <code>rm --list</code> ดูรายการ <code>rm --purge 30 --dry-run</code> เพื่อดูตัวอย่าง แล้วใช้ <code>rm --purge 30</code> ลบรายการที่เก่ากว่า 30 วันถาวร (รองรับ <code>2w</code>, <code>3m</code> วันที่เวลา หรือ <code>--purge-path</code> ด้วย) บันทึกล็อกการลบที่เกี่ยวข้องจะถูกล้างให้ด้วย',
         faq_q3: 'หากมีไฟล์ชื่อซ้ำกันจะเกิดปัญหาหรือไม่?',
         faq_a3: 'ระบบจะต่อท้ายชื่อไฟล์ด้วยเวลาและ MD5 แฮช ทำให้ไม่มีปัญหาการเขียนทับไฟล์เดิมในถังขยะอย่างแน่นอน',
         faq_q4: 'Hook ป้องกัน AI ทำงานอย่างไร?',
@@ -2840,6 +2984,10 @@ alias rm='better-rm'</pre>
         feat5_desc: 'Merekodkan log terperinci di ~/.local/state/better-rm/deletion.log mengikut piawaian XDG.',
         feat6_title: '100% Serasi Parameter rm Asal',
         feat6_desc: 'Menyokong bendera -r, -R, -f, -i, -I, -v sepenuhnya tanpa mengubah tabiat harian anda.',
+        feat7_title: 'Pembersihan fleksibel item lama',
+        feat7_desc: 'Gunakan <code>rm --purge</code> untuk memadam item lama secara kekal mengikut bilangan hari (<code>30</code>), minggu (<code>2w</code>), bulan (<code>3m</code>) atau tarikh/masa tertentu, dan tambah <code>--purge-path</code> untuk menyasarkan hanya item yang asalnya berada di bawah sesuatu direktori. Senarai penuh dipaparkan sebelum pengesahan dan rekod log pemadaman yang berkaitan turut dibersihkan.',
+        feat8_title: 'Senarai dan statistik ringkasan',
+        feat8_desc: '<code>rm --list</code> memaparkan masa pemadaman, saiz dan laluan asal setiap item; <code>rm --stats</code> meringkaskan jumlah, taburan mengikut masa dan direktori terbesar, supaya anda dapat melihat dahulu sebelum membersihkan.',
         agent_tag: 'Keselamatan AI',
         agent_title: 'Benteng Keselamatan untuk AI Coding Agent',
         agent_desc: 'Menyekat operasi pemadaman berbahaya secara automatik sebelum arahan dilaksanakan oleh AI.',
@@ -2884,6 +3032,11 @@ alias rm='better-rm'</pre>
         opt_v_desc: 'Tunjukkan butiran operasi pemindahan dengan warna',
         opt_restore_desc: '<strong>[Eksklusif]</strong> Pulihkan fail yang baru dipadam ke direktori semasa',
         opt_restore_f_desc: 'Pulihkan dan tulis ganti tanpa pengesahan jika fail sudah wujud',
+        opt_purge_desc: '<strong>[Eksklusif]</strong> Padam item lama dalam tong sampah secara kekal dan bersihkan rekod log berkaitan; menyokong <code>30</code>, <code>30d</code>, <code>2w</code>, <code>3m</code> atau tarikh/masa, senarai dipaparkan sebelum pengesahan (-f untuk langkau)',
+        opt_purge_path_desc: '<strong>[Eksklusif]</strong> Padam item tong sampah secara kekal mengikut awalan laluan asal; boleh diulang dan digabungkan dengan <code>--purge</code> (kedua-dua syarat mesti dipenuhi)',
+        opt_dry_desc: 'Bersama <code>--purge</code> / <code>--purge-path</code>: hanya senaraikan item, ruang dan bilangan rekod log yang akan dibuang, tanpa memadam',
+        opt_list_desc: '<strong>[Eksklusif]</strong> Senaraikan item tong sampah (masa pemadaman, saiz, jenis, laluan asal) beserta jumlah; tapis dengan <code>--purge</code> / <code>--purge-path</code>, tiada apa yang dipadam',
+        opt_stats_desc: '<strong>[Eksklusif]</strong> Papar ringkasan tong sampah: bilangan dan jenis item, penggunaan ruang, pemadaman terawal/terkini, taburan mengikut masa dan 5 direktori terbesar',
         opt_ver_desc: 'Papar maklumat versi atau manual bantuan penuh',
         env_table_title: '🛠️ Pembolehubah Persekitaran',
         th_env: 'Pembolehubah',
@@ -2919,13 +3072,16 @@ alias rm='better-rm'</pre>
         comp_row7: 'Keserasian bendera POSIX',
         comp_r7_n: 'Asal',
         comp_r7_b: '100% serasi (-rf, -i, -v)',
+        comp_row8: 'Pengurusan dan pembersihan tong sampah',
+        comp_r8_n: 'Perlu gabung find / du sendiri',
+        comp_r8_b: 'rm --list / --stats / --purge (dengan pratonton)',
         faq_tag: 'Soalan Lazim',
         faq_title: 'FAQ',
         faq_desc: 'Maklumat penting tentang keselamatan dan penggunaan better-rm.',
         faq_q1: 'Adakah better-rm menggantikan /bin/rm sistem secara kekal?',
         faq_a1: 'Tidak. Pemasangan disyorkan hanya menggunakan alias rm=... dalam shell. Perintah /bin/rm asal masih kekal dan boleh digunakan melalui /bin/rm atau \\rm.',
         faq_q2: 'Bagaimanakah cara mengosongkan Tong Sampah?',
-        faq_a2: 'better-rm tidak memadam tong sampah secara automatik demi keselamatan. Semak dengan ls -la ~/.Trash dan kosongkan dengan /bin/rm -rf ~/.Trash/*.',
+        faq_a2: 'Demi keselamatan, better-rm tidak memadam kandungan tong sampah secara automatik. Gunakan <code>rm --stats</code> untuk melihat penggunaan ruang, <code>rm --list</code> untuk memeriksa item, <code>rm --purge 30 --dry-run</code> untuk pratonton dan <code>rm --purge 30</code> untuk memadam item lebih 30 hari secara kekal (turut menyokong <code>2w</code>, <code>3m</code>, tarikh/masa atau <code>--purge-path</code>). Rekod log pemadaman yang berkaitan turut dibersihkan.',
         faq_q3: 'Bagaimanakah pertindihan nama fail dikendalikan?',
         faq_a3: 'better-rm menambah cap masa nanosaat dan cincangan MD5 secara automatik untuk memastikan tiada fail ditindih dalam tong sampah.',
         faq_q4: 'Bagaimanakah cangkuk AI Agent berfungsi?',
@@ -2973,6 +3129,10 @@ alias rm='better-rm'</pre>
         feat5_desc: 'Mencatat riwayat detail di ~/.local/state/better-rm/deletion.log sesuai standar XDG.',
         feat6_title: '100% Kompatibel dengan Parameter rm',
         feat6_desc: 'Mendukung penuh opsi -r, -R, -f, -i, -I, -v tanpa mengubah kebiasaan atau skrip shell Anda.',
+        feat7_title: 'Pembersihan item lama yang fleksibel',
+        feat7_desc: 'Gunakan <code>rm --purge</code> untuk menghapus permanen item lama berdasarkan jumlah hari (<code>30</code>), minggu (<code>2w</code>), bulan (<code>3m</code>) atau tanggal/jam tertentu, dan tambahkan <code>--purge-path</code> untuk menargetkan hanya item yang semula berada di bawah suatu direktori. Daftar lengkap ditampilkan sebelum konfirmasi, dan catatan log penghapusan yang terkait ikut dibersihkan.',
+        feat8_title: 'Daftar dan statistik ringkas',
+        feat8_desc: '<code>rm --list</code> menampilkan waktu penghapusan, ukuran, dan path asal setiap item; <code>rm --stats</code> merangkum total, sebaran menurut waktu, dan direktori terbesar, sehingga Anda bisa melihat dulu sebelum membersihkan.',
         agent_tag: 'Proteksi AI Agent',
         agent_title: 'Pagar Pengaman untuk AI Coding Agent',
         agent_desc: 'Mencegah perintah penghapusan berbahaya secara otomatis sebelum dieksekusi oleh AI.',
@@ -3017,6 +3177,11 @@ alias rm='better-rm'</pre>
         opt_v_desc: 'Tampilkan detail pemindahan file secara berwarna',
         opt_restore_desc: '<strong>[Fitur Eksklusif]</strong> Pulihkan file terakhir yang dihapus ke direktori saat ini',
         opt_restore_f_desc: 'Pulihkan dan timpa tanpa konfirmasi jika file sudah ada',
+        opt_purge_desc: '<strong>[Eksklusif]</strong> Hapus permanen item lama di tempat sampah dan bersihkan catatan log terkait; mendukung <code>30</code>, <code>30d</code>, <code>2w</code>, <code>3m</code> atau tanggal/jam, daftar ditampilkan sebelum konfirmasi (-f untuk melewati)',
+        opt_purge_path_desc: '<strong>[Eksklusif]</strong> Hapus permanen item tempat sampah berdasarkan awalan path asal; bisa diulang dan digabung dengan <code>--purge</code> (kedua syarat harus terpenuhi)',
+        opt_dry_desc: 'Bersama <code>--purge</code> / <code>--purge-path</code>: hanya menampilkan item, ruang, dan jumlah catatan log yang akan dihapus, tanpa menghapus',
+        opt_list_desc: '<strong>[Eksklusif]</strong> Tampilkan item tempat sampah (waktu hapus, ukuran, jenis, path asal) beserta total; saring dengan <code>--purge</code> / <code>--purge-path</code>, tidak ada yang dihapus',
+        opt_stats_desc: '<strong>[Eksklusif]</strong> Tampilkan ringkasan tempat sampah: jumlah dan jenis item, penggunaan ruang, penghapusan terlama/terbaru, sebaran menurut waktu, dan 5 direktori terbesar',
         opt_ver_desc: 'Tampilkan informasi versi atau manual bantuan lengkap',
         env_table_title: '🛠️ Variabel Lingkungan',
         th_env: 'Variabel',
@@ -3052,13 +3217,16 @@ alias rm='better-rm'</pre>
         comp_row7: 'Kompatibilitas opsi POSIX',
         comp_r7_n: 'Bawaan',
         comp_r7_b: '100% kompatibel (-rf, -i, -v)',
+        comp_row8: 'Pengelolaan dan pembersihan tempat sampah',
+        comp_r8_n: 'Harus merangkai find / du sendiri',
+        comp_r8_b: 'rm --list / --stats / --purge (dengan pratinjau)',
         faq_tag: 'FAQ',
         faq_title: 'Pertanyaan yang Sering Diajukan',
         faq_desc: 'Informasi seputar keamanan dan cara penggunaan better-rm.',
         faq_q1: 'Apakah better-rm menimpa biner /bin/rm bawaan sistem?',
         faq_a1: 'Tidak. Instalasi resmi hanya menggunakan alias rm=... pada shell. Perintah /bin/rm asli tetap utuh dan dapat dipanggil kapan saja melalui /bin/rm atau \\rm.',
         faq_q2: 'Bagaimana cara membersihkan atau mengosongkan Sampah?',
-        faq_a2: 'better-rm tidak menghapus file di sampah secara otomatis demi keamanan. Periksa dengan ls -la ~/.Trash dan bersihkan menggunakan /bin/rm -rf ~/.Trash/*.',
+        faq_a2: 'Demi keamanan, better-rm tidak menghapus isi tempat sampah secara otomatis. Gunakan <code>rm --stats</code> untuk melihat pemakaian ruang, <code>rm --list</code> untuk memeriksa item, <code>rm --purge 30 --dry-run</code> untuk pratinjau, dan <code>rm --purge 30</code> untuk menghapus permanen item lebih dari 30 hari (juga mendukung <code>2w</code>, <code>3m</code>, tanggal/jam, atau <code>--purge-path</code>). Catatan log penghapusan yang terkait ikut dibersihkan.',
         faq_q3: 'Bagaimana jika terjadi konflik nama file yang sama?',
         faq_a3: 'better-rm otomatis menambahkan cap waktu nanodetik dan hash MD5 (misalnya file.txt__20260819_143052_123456789__hash) sehingga tidak akan terjadi tumpang tindih file.',
         faq_q4: 'Bagaimana cara kerja Hook AI Agent?',
@@ -3258,6 +3426,39 @@ alias rm='better-rm'</pre>
           appendTermLine(`<span class="term-success">✓ 移動 (Moved): 'draft.txt' -> '~/.Trash/home/user/project/draft.txt__20260819_143052_123456789__e59ff97941044f85df5297e1c302d260'</span>`);
           appendTermLine(`<span class="term-info">ℹ 刪除日誌已寫入 ~/.local/state/better-rm/deletion.log</span>`);
         }, 150);
+      } else if (/(^| )--list( |$)/.test(clean)) {
+        setTimeout(() => {
+          appendTermLine(`<span style="white-space: pre">2026-06-02 09:15:10    1.5 MiB  file      /home/user/project/dump.sql</span>`);
+          appendTermLine(`<span style="white-space: pre">2026-07-21 18:40:02     12 KiB  directory /home/user/project/build</span>`);
+          appendTermLine(`<span style="white-space: pre">2026-08-19 14:30:52      4 KiB  file      /home/user/project/draft.txt</span>`);
+          appendTermLine(`<span class="term-success">共 3 個項目（2 個檔案、1 個目錄、0 個符號連結），佔用約 1.5 MiB</span>`);
+        }, 150);
+      } else if (/(^| )--stats( |$)/.test(clean)) {
+        setTimeout(() => {
+          appendTermLine(`<span class="term-info" style="white-space: pre">垃圾桶統計 (Trash statistics)</span>`);
+          appendTermLine(`<span style="white-space: pre">  項目數 (Items):         3（檔案 2、目錄 1、符號連結 0）</span>`);
+          appendTermLine(`<span style="white-space: pre">  佔用空間 (Disk usage):  1.5 MiB</span>`);
+          appendTermLine(`<span style="white-space: pre">  最早刪除 (Oldest):      2026-06-02 09:15:10</span>`);
+          appendTermLine(`<span style="white-space: pre">  最新刪除 (Newest):      2026-08-19 14:30:52</span>`);
+          appendTermLine(`<span class="term-info">依刪除時間分佈 (By age):</span>`);
+          appendTermLine(`<span style="white-space: pre">       1 項       4 KiB  1 天內 (< 1 day)</span>`);
+          appendTermLine(`<span style="white-space: pre">       1 項      12 KiB  7–30 天 (7–30 days)</span>`);
+          appendTermLine(`<span style="white-space: pre">       1 項     1.5 MiB  30–90 天 (30–90 days)</span>`);
+        }, 150);
+      } else if (/(^| )--purge(-path)?( |=|$)/.test(clean)) {
+        // 只有 --purge-path（沒有 --purge 時間條件）時，條件是原始路徑而不是天數
+        const hasAge = /(^| )--purge( |=)/.test(clean);
+        const label = hasAge ? '超過 30 天' : '原始路徑在 /home/user/project 之下';
+        setTimeout(() => {
+          appendTermLine(`將永久刪除 (would purge) '~/.Trash/home/user/project/dump.sql__20260602_091510_...' (1.5 MiB)`);
+          if (/(^| )--dry-run( |$)/.test(clean)) {
+            if (hasAge) appendTermLine(`截止時間 (cutoff): 2026-07-20 14:30:52`);
+            appendTermLine(`<span class="term-success">試執行：將永久刪除 1 個${label}的項目，預計釋放約 1.5 MiB，並清除 1 筆刪除日誌記錄</span>`);
+          } else {
+            appendTermLine(`<span class="term-warning">rm: 永久刪除垃圾桶中 1 個${label}的項目（約 1.5 MiB）？此操作無法復原 (y/N)</span>`);
+            appendTermLine(`<span class="term-info">ℹ 這是模擬器，不會真的刪除任何東西。加上 --dry-run 只預覽，或加 -f 略過確認。</span>`);
+          }
+        }, 150);
       } else if (clean.includes('rm -rf /') || clean.includes('rm -r /') || clean === 'rm /') {
         setTimeout(() => {
           appendTermLine(`<span class="term-error">錯誤 (Error): 拒絕刪除受保護的目錄: '/'</span>`);
@@ -3310,6 +3511,9 @@ alias rm='better-rm'</pre>
     document.getElementById('btnDemoGit').addEventListener('click', () => runCommand('rm -rf .git'));
     document.getElementById('btnDemoRestore').addEventListener('click', () => runCommand('rm --restore draft.txt'));
     document.getElementById('btnDemoLog').addEventListener('click', () => runCommand('cat deletion.log'));
+    document.getElementById('btnDemoList').addEventListener('click', () => runCommand('rm --list'));
+    document.getElementById('btnDemoStats').addEventListener('click', () => runCommand('rm --stats'));
+    document.getElementById('btnDemoPurge').addEventListener('click', () => runCommand('rm --purge 30 --dry-run'));
 
     /* ==========================================================================
        AI Agent Switcher Hub Data & Logic
