@@ -1171,6 +1171,15 @@ FORM: Modern developer product workstation, responsive bento layout, interactive
       font-size: 0.86rem;
       color: var(--text-subtle);
     }
+    .footer-bottom a {
+      color: var(--text-muted);
+      text-decoration: underline;
+      text-underline-offset: 3px;
+      transition: color var(--transition-fast);
+    }
+    .footer-bottom a:hover {
+      color: var(--primary);
+    }
 
     /* Toast Notification */
     .toast-container {
@@ -1205,6 +1214,21 @@ FORM: Modern developer product workstation, responsive bento layout, interactive
       to { opacity: 1; transform: translateY(0); }
     }
 
+    /* 安裝方式卡片：minmax(0, 1fr) 讓過長的指令列在 <pre> 內捲動，而不是撐大欄寬造成版面溢出 */
+    .install-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 24px;
+    }
+    .install-grid > * {
+      min-width: 0;
+    }
+    /* 讓安裝指令完整顯示（自動換行），不必在框內左右捲動才看得到 */
+    .install-grid .agent-code-preview {
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+
     /* Responsive Design */
     @media (max-width: 1024px) {
       .hero-grid {
@@ -1222,6 +1246,12 @@ FORM: Modern developer product workstation, responsive bento layout, interactive
       }
       .faq-grid {
         grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 900px) {
+      .install-grid {
+        grid-template-columns: minmax(0, 1fr);
       }
     }
 
@@ -1258,7 +1288,7 @@ FORM: Modern developer product workstation, responsive bento layout, interactive
       <a href="#" class="brand-logo">
         <div class="brand-icon">🛡️</div>
         <span>better-rm</span>
-        <span class="brand-version">v1.5.0</span>
+        <span class="brand-version">v1.8.0</span>
       </a>
 
       <nav>
@@ -1558,7 +1588,7 @@ FORM: Modern developer product workstation, responsive bento layout, interactive
         <p class="section-desc" data-i18n="install_desc">支援 Linux、macOS 與 WSL 環境，相容 Bash 4.0+ 與 Zsh。</p>
       </div>
 
-      <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px;">
+      <div class="install-grid">
         <!-- Method 1: Automatic -->
         <div class="feature-card" style="border-color: rgba(16, 185, 129, 0.4);">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
@@ -1584,7 +1614,7 @@ rm --version</pre>
 # 加入 ~/.bashrc 或 ~/.zshrc
 alias rm='~/.better-rm/better-rm'
 source ~/.bashrc</pre>
-          <button class="btn-secondary" style="width: 100%; justify-content: center; font-size: 0.88rem;" onclick="copyCode('git clone https://github.com/doggy8088/better-rm.git ~/.better-rm && echo \"alias rm=~/.better-rm/better-rm\" >> ~/.bashrc')" data-i18n="copy_method_btn">複製設定代碼</button>
+          <button class="btn-secondary" style="width: 100%; justify-content: center; font-size: 0.88rem;" onclick="copyCode('git clone https://github.com/doggy8088/better-rm.git ~/.better-rm && echo &quot;alias rm=~/.better-rm/better-rm&quot; >> ~/.bashrc')" data-i18n="copy_method_btn">複製設定代碼</button>
         </div>
 
         <!-- Method 3: Global PATH -->
@@ -1919,7 +1949,7 @@ alias rm='better-rm'</pre>
       </div>
 
       <div class="footer-bottom">
-        <div>© 2026 better-rm. Released under the MIT License.</div>
+        <div>© 2026 <a href="https://www.facebook.com/will.fans" target="_blank" rel="noopener noreferrer">Will 保哥</a>. Released under the MIT License.</div>
         <div>Made with craft for developers & AI Agents worldwide.</div>
       </div>
     </div>
