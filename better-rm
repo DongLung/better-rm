@@ -294,10 +294,26 @@ A safer alternative to the rm command
   -v, --verbose          顯示詳細操作過程
   --restore <檔案>       還原最後一次刪除的檔案到目前資料夾
                          Restore the last deleted file to the current directory
-  --purge <天數>         永久刪除垃圾桶中超過指定天數的項目（加 -f 不提示）
-                         Permanently delete trash items older than <days> (-f skips the prompt)
-  --dry-run              搭配 --purge：只列出預計刪除的項目與可釋放空間，不實際刪除
-                         With --purge: list items and space to be freed without deleting
+  --purge <時間條件>     永久刪除垃圾桶中過舊的項目並清除對應的刪除日誌；
+                         會先列出完整項目清單再確認（加 -f 不列出也不提示）
+                         Permanently delete old trash items and their deletion log records;
+                         lists every item and asks for confirmation first (-f skips both)
+                         時間條件 (age): 30 或 30d (天 days)、2w (週 weeks)、3m (月 months)、
+                         2026-01-31 或 '2026-01-31 14:30' (早於該日期時間 before that date/time)
+  --list                 列出垃圾桶中的項目（刪除時間、大小、類型、原始路徑）與統計；
+                         可搭配 --purge <時間條件> / --purge-path <路徑> 當作篩選條件（不會刪除）
+                         List trash items (deletion time, size, type, original path) with totals;
+                         --purge / --purge-path act only as filters here (nothing is deleted)
+  --stats                顯示垃圾桶摘要統計：項目數與類型、佔用空間、最早/最新刪除時間、
+                         依刪除時間分佈、依原始目錄統計前五名；可搭配 --purge / --purge-path 篩選
+                         Show trash summary statistics: totals, disk usage, oldest/newest, age
+                         distribution and top original directories; --purge / --purge-path filter
+  --purge-path <路徑>    永久刪除垃圾桶中「原始路徑」位於該路徑之下的項目，可重複指定；
+                         可單獨使用，或與 --purge 並用（兩個條件都要符合）
+                         Permanently delete trash items whose original path is under <path>; repeatable,
+                         usable alone or with --purge (both conditions must match)
+  --dry-run              搭配 --purge / --purge-path：只列出預計刪除的項目與可釋放空間，不實際刪除
+                         With --purge / --purge-path: list items and space to be freed without deleting
   --help                 顯示此說明訊息
   --version              顯示版本資訊
 
@@ -319,6 +335,17 @@ A safer alternative to the rm command
   rm -rf old_project/            # 強制刪除目錄
   TRASH_DIR=/tmp/trash rm file   # 使用自訂垃圾桶目錄
   rm --purge 30                  # 永久刪除 30 天前移入垃圾桶的項目
+  rm --purge 2w                  # 永久刪除 2 週前的項目
+  rm -f --purge 3m               # 永久刪除 3 個月前的項目（不提示）
+  rm --purge 2026-01-01          # 永久刪除 2026-01-01 00:00:00 之前的項目
+  rm --purge '2026-01-31 14:30'  # 永久刪除指定日期時間之前的項目
+  rm --list                      # 列出垃圾桶中所有項目與統計
+  rm --list --purge 30           # 只列出超過 30 天的項目（僅列出，不刪除）
+  rm --list --purge-path .       # 只列出原本位於目前資料夾之下的項目
+  rm --stats                     # 顯示垃圾桶摘要統計
+  rm --stats --purge-path .      # 只統計原本位於目前資料夾之下的項目
+  rm --purge-path ~/projects/old # 永久刪除原本位於 ~/projects/old 之下的所有項目
+  rm --purge 2w --purge-path .   # 只刪除原本位於目前資料夾之下、且超過 2 週的項目
   rm --purge 30 --dry-run        # 預覽將刪除的項目與可釋放空間
 
 EOF
@@ -633,17 +660,17 @@ trash_item_expired() {
     (( 10#${BASH_REMATCH[1]}${BASH_REMATCH[2]} <= 10#$cutoff ))
 }
 
-# 檢查目錄內是否含有未過期的垃圾桶項目
-# Check whether a directory contains any trash item that has not expired
+# 檢查目錄內是否含有不符合清除條件（未過期或原始路徑不符）的垃圾桶項目
+# Check whether a directory contains any trash item that does not match the purge conditions (not expired, or original path outside the prefixes)
 # 若原始路徑的上層目錄名稱剛好符合垃圾桶格式，該目錄其實是路徑結構目錄，不能整個刪除
 # If an ancestor of an original path happens to match the trash name format, that directory is
 # really part of the path structure and must not be removed as a whole
-contains_unexpired_trash_item() {
+contains_unmatched_trash_item() {
     local dir="$1"
     local cutoff="$2"
     local nested
     while IFS= read -r -d '' nested; do
-        trash_item_expired "$nested" "$cutoff"
+        trash_item_matches "$nested" "$cutoff"
         if [ $? -eq 1 ]; then
             return 0
         fi
@@ -682,36 +709,360 @@ format_kib() {
     fi
 }
 
-# 永久刪除垃圾桶中超過指定天數的項目
-# Permanently purge trash items deleted more than the given number of days ago
-purge_trash() {
-    local days="$1"
-    local force="$2"
-    local verbose="$3"
-    local dry_run="$4"
+# 取得指定年月的天數（含閏年判斷）
+# Get the number of days in the given year and month (leap years included)
+days_in_month() {
+    local year=$((10#$1))
+    local month=$((10#$2))
+    case "$month" in
+        1|3|5|7|8|10|12) echo 31 ;;
+        4|6|9|11) echo 30 ;;
+        *)
+            if (( (year % 4 == 0 && year % 100 != 0) || year % 400 == 0 )); then
+                echo 29
+            else
+                echo 28
+            fi
+            ;;
+    esac
+}
 
-    if [[ ! "$days" =~ ^[0-9]+$ ]] || [ ${#days} -gt 6 ]; then
-        error_msg "無效的天數: '$days'（需為 0 以上的整數）"
-        error_msg "invalid number of days: '$days' (must be a non-negative integer)"
+# 解析 --purge 的時間條件，結果存入 PURGE_CUTOFF 與 PURGE_LABEL_ZH / PURGE_LABEL_EN
+# Parse the --purge age spec into PURGE_CUTOFF and PURGE_LABEL_ZH / PURGE_LABEL_EN
+# 支援 (Supported): 30 / 30d (天 days)、2w (週 weeks)、3m (月 months)、
+#                   YYYY-MM-DD、YYYY-MM-DD HH:MM[:SS]、YYYY-MM-DDTHH:MM[:SS]
+# PURGE_CUTOFF 為本地時間 YYYYMMDDHHMMSS，刪除時間小於等於它的項目視為過期；0 表示沒有項目過期
+# PURGE_CUTOFF is local YYYYMMDDHHMMSS; items deleted at or before it are expired; 0 means nothing expires
+parse_purge_age() {
+    local spec="$1"
+    local relative_re='^([0-9]+)([dDwWmM]?)$'
+    local absolute_re='^([0-9]{4})-([0-9]{2})-([0-9]{2})([T ]([0-9]{2}):([0-9]{2})(:([0-9]{2}))?)?$'
+    local now_epoch now_str
+
+    PURGE_CUTOFF=""
+    PURGE_LABEL_ZH=""
+    PURGE_LABEL_EN=""
+
+    now_epoch=$(date +%s)
+    now_str=$(format_epoch "$now_epoch")
+    if [ -z "$now_str" ]; then
+        error_msg "無法計算截止時間"
+        error_msg "Failed to compute purge cutoff time"
         return 1
     fi
-    days=$((10#$days))
 
-    # 垃圾桶位置設定錯誤時，永久刪除可能波及垃圾桶以外的檔案，因此先嚴格檢查
-    # A misconfigured trash location could make a permanent purge reach files outside the trash, so validate strictly
-    if [[ "$TRASH_DIR" != /* ]]; then
-        error_msg "垃圾桶目錄必須是絕對路徑: '$TRASH_DIR'"
-        error_msg "Trash directory must be an absolute path: '$TRASH_DIR'"
+    if [[ "$spec" =~ $relative_re ]] && [ ${#BASH_REMATCH[1]} -le 6 ]; then
+        local count=$((10#${BASH_REMATCH[1]}))
+        local unit="${BASH_REMATCH[2]}"
+        case "$unit" in
+            m|M)
+                # 以日曆月份回推，並將日期限制在目標月份的天數內（例如 3/31 減 1 個月為 2/28 或 2/29）
+                # Step back by calendar months and clamp the day to the target month (e.g. Mar 31 minus 1 month is Feb 28/29)
+                local total=$((10#${now_str:0:4} * 12 + 10#${now_str:4:2} - 1 - count))
+                if [ "$total" -lt 12000 ]; then
+                    PURGE_CUTOFF=0
+                else
+                    local target_year=$((total / 12))
+                    local target_month=$((total % 12 + 1))
+                    local target_day=$((10#${now_str:6:2}))
+                    local max_day
+                    max_day=$(days_in_month "$target_year" "$target_month")
+                    if [ "$target_day" -gt "$max_day" ]; then
+                        target_day=$max_day
+                    fi
+                    PURGE_CUTOFF=$(printf '%04d%02d%02d%s' "$target_year" "$target_month" "$target_day" "${now_str:8:6}")
+                fi
+                PURGE_LABEL_ZH="超過 $count 個月"
+                PURGE_LABEL_EN="older than $count months"
+                ;;
+            *)
+                local seconds
+                if [ "$unit" = "w" ] || [ "$unit" = "W" ]; then
+                    seconds=$((count * 7 * 86400))
+                    PURGE_LABEL_ZH="超過 $count 週"
+                    PURGE_LABEL_EN="older than $count weeks"
+                else
+                    seconds=$((count * 86400))
+                    PURGE_LABEL_ZH="超過 $count 天"
+                    PURGE_LABEL_EN="older than $count days"
+                fi
+                if [ $((now_epoch - seconds)) -lt 0 ]; then
+                    PURGE_CUTOFF=0
+                else
+                    PURGE_CUTOFF=$(format_epoch $((now_epoch - seconds)))
+                fi
+                ;;
+        esac
+    elif [[ "$spec" =~ $absolute_re ]]; then
+        local year="${BASH_REMATCH[1]}"
+        local month="${BASH_REMATCH[2]}"
+        local day="${BASH_REMATCH[3]}"
+        local hour="${BASH_REMATCH[5]:-00}"
+        local minute="${BASH_REMATCH[6]:-00}"
+        local second="${BASH_REMATCH[8]:-00}"
+        if [ $((10#$month)) -lt 1 ] || [ $((10#$month)) -gt 12 ] || [ $((10#$day)) -lt 1 ] || \
+           [ $((10#$day)) -gt "$(days_in_month "$year" "$month")" ] || \
+           [ $((10#$hour)) -gt 23 ] || [ $((10#$minute)) -gt 59 ] || [ $((10#$second)) -gt 59 ]; then
+            error_msg "無效的日期或時間: '$spec'"
+            error_msg "invalid date or time: '$spec'"
+            return 1
+        fi
+        PURGE_CUTOFF="${year}${month}${day}${hour}${minute}${second}"
+        if [ $((10#$PURGE_CUTOFF)) -gt $((10#$now_str)) ]; then
+            error_msg "指定的時間在未來: '$spec'"
+            error_msg "the specified time is in the future: '$spec'"
+            return 1
+        fi
+        local display="${year}-${month}-${day} ${hour}:${minute}:${second}"
+        PURGE_LABEL_ZH="早於 $display"
+        PURGE_LABEL_EN="older than $display"
+    else
+        error_msg "無效的時間條件: '$spec'（可用天數 30 / 30d、週數 2w、月數 3m，或日期時間 2026-01-31、'2026-01-31 14:30'）"
+        error_msg "invalid age: '$spec' (use days 30 / 30d, weeks 2w, months 3m, or a date/time like 2026-01-31 or '2026-01-31 14:30')"
         return 1
     fi
-    if is_protected "$TRASH_DIR"; then
-        error_msg "拒絕清除受保護的目錄: '$TRASH_DIR'"
-        error_msg "Refused to purge protected directory: '$TRASH_DIR'"
+
+    if [ -z "$PURGE_CUTOFF" ]; then
+        error_msg "無法計算截止時間"
+        error_msg "Failed to compute purge cutoff time"
         return 1
+    fi
+}
+
+# 解析 --purge-path 的原始路徑前綴，結果存入 PURGE_PATH_PREFIXES（比對用）與 PURGE_PATH_DISPLAY（顯示用）
+# Resolve the --purge-path prefixes into PURGE_PATH_PREFIXES (for matching) and PURGE_PATH_DISPLAY (for messages)
+# 垃圾桶中記錄的是解析過符號連結的絕對路徑（例如 macOS 的 /tmp 會變成 /private/tmp），
+# 而原目錄常已不存在，所以同時加入「正規化後」與「由最近存在的上層目錄解析後」兩種形式
+# The trash records symlink-resolved absolute paths (e.g. /tmp becomes /private/tmp on macOS) and the
+# original directory is often gone, so both the normalized and the nearest-existing-ancestor-resolved forms are matched
+# 前綴以目錄為界：/a/foo 符合 /a/foo 與 /a/foo/...，但不符合 /a/foobar；根目錄 "/" 以空字串表示
+# Prefixes match on directory boundaries: /a/foo matches /a/foo and /a/foo/... but not /a/foobar; the root "/" is stored as ""
+resolve_purge_paths() {
+    local input prefix existing tail real resolved
+    PURGE_PATH_PREFIXES=()
+    PURGE_PATH_DISPLAY=()
+
+    for input in "${PURGE_PATH_INPUTS[@]}"; do
+        if [ -z "$input" ]; then
+            error_msg "選項 '--purge-path' 的路徑不可為空"
+            error_msg "option '--purge-path' requires a non-empty path"
+            return 1
+        fi
+        if [[ "$input" = /* ]]; then
+            prefix="$input"
+        else
+            prefix="$(pwd)/$input"
+        fi
+        prefix=$(normalize_path "$prefix")
+        prefix="${prefix%/}"
+        PURGE_PATH_PREFIXES+=("$prefix")
+        PURGE_PATH_DISPLAY+=("${prefix:-/}")
+
+        existing="${prefix:-/}"
+        tail=""
+        while [ "$existing" != "/" ] && [ ! -e "$existing" ] && [ ! -L "$existing" ]; do
+            tail="/${existing##*/}$tail"
+            existing="${existing%/*}"
+            [ -z "$existing" ] && existing="/"
+        done
+        real=$(readlink -f "$existing" 2>/dev/null)
+        [ -z "$real" ] && real=$(realpath "$existing" 2>/dev/null)
+        if [ -n "$real" ]; then
+            resolved="${real%/}$tail"
+            if [ "$resolved" != "$prefix" ]; then
+                PURGE_PATH_PREFIXES+=("$resolved")
+            fi
+        fi
+    done
+}
+
+# 還原垃圾桶項目的原始路徑 / Recover a trash item's original path
+# 檢查垃圾桶項目的原始路徑是否位於任一 --purge-path 前綴之下（未指定前綴時一律符合）
+# Check whether a trash item's original path is under any --purge-path prefix (always true when none was given)
+# 原始路徑由垃圾桶內的相對位置還原：去掉垃圾桶根目錄與結尾的 __時間戳記__雜湊
+# The original path is recovered from the item's location: strip the trash root and the trailing __timestamp__hash
+trash_item_original_path() {
+    local original="${1#"$PURGE_TRASH_ROOT"}"
+    original="${original%__*}"
+    original="${original%__*}"
+    echo "$original"
+}
+
+trash_item_path_matches() {
+    local original prefix
+    if [ ${#PURGE_PATH_PREFIXES[@]} -eq 0 ]; then
+        return 0
+    fi
+    original=$(trash_item_original_path "$1")
+    for prefix in "${PURGE_PATH_PREFIXES[@]}"; do
+        if [ "$original" = "$prefix" ] || [[ "$original" = "$prefix"/* ]]; then
+            return 0
+        fi
+    done
+    return 1
+}
+
+# 判斷垃圾桶項目是否符合所有清除條件（時間與原始路徑）
+# Check whether a trash item matches every purge condition (age and original path)
+# 回傳 (Returns): 0 = 符合 (match), 1 = 不符合 (no match), 2 = 非垃圾桶項目 (not a trash item)
+trash_item_matches() {
+    local status
+    trash_item_expired "$1" "$2"
+    status=$?
+    if [ $status -ne 0 ]; then
+        return $status
+    fi
+    trash_item_path_matches "$1" || return 1
+}
+
+# 從單一刪除日誌移除指定項目（及其內部項目）的記錄，輸出被移除的筆數
+# Remove records of the given purged items (and anything nested inside them) from one deletion log; prints the number removed
+# dry_run=1 時只計算筆數，不改寫日誌；只有實際有記錄要移除時才會改寫日誌
+# With dry_run=1 it only counts; the log is rewritten only when there are records to remove
+# 日誌行格式不符時一律保留，寧可多留不可誤刪
+# Lines that do not parse are always kept: better to leave a stale record than drop a valid one
+prune_deletion_log() {
+    local log_file="$1"
+    local paths_file="$2"
+    local dry_run="$3"
+    local log_dir="${log_file%/*}"
+    local tmp_log tmp_count removed
+
+    if [ ! -f "$log_file" ]; then
+        echo 0
+        return 0
+    fi
+
+    tmp_count=$(mktemp "${TMPDIR:-/tmp}/better-rm-count.XXXXXX" 2>/dev/null) || return 1
+    if [ "$dry_run" = "1" ]; then
+        tmp_log=/dev/null
+    elif ! tmp_log=$(mktemp "$log_dir/.deletion-log.XXXXXX" 2>/dev/null); then
+        rm -f "$tmp_count"
+        return 1
+    fi
+
+    # 垃圾桶路徑是第 3 欄；比對前先合併重複的斜線（TRASH_DIR 結尾有 / 時日誌會記成 //）
+    # The trash path is field 3; collapse repeated slashes first (a TRASH_DIR ending in / is logged with //)
+    if ! awk -v countfile="$tmp_count" '
+        BEGIN { FS = " [|] " }
+        function norm(p) {
+            gsub(/\/+/, "/", p)
+            if (length(p) > 1) sub(/\/$/, "", p)
+            return p
+        }
+        FILENAME == ARGV[1] {
+            if ($0 != "") purged[norm($0)] = 1
+            next
+        }
+        /^#/ || $0 == "" { print; next }
+        {
+            if (NF == 5) {
+                p = norm($3)
+                while (p != "") {
+                    if (p in purged) { removed++; next }
+                    if (p !~ /\//) break
+                    sub(/\/[^\/]*$/, "", p)
+                }
+            }
+            print
+        }
+        END { print removed + 0 > countfile }
+    ' "$paths_file" "$log_file" > "$tmp_log" 2>/dev/null; then
+        rm -f "$tmp_count"
+        [ "$tmp_log" != "/dev/null" ] && rm -f "$tmp_log"
+        return 1
+    fi
+
+    removed=$(cat "$tmp_count" 2>/dev/null)
+    rm -f "$tmp_count"
+    removed="${removed:-0}"
+
+    if [ "$dry_run" != "1" ]; then
+        if [ "$removed" -gt 0 ]; then
+            if ! mv -f "$tmp_log" "$log_file" 2>/dev/null; then
+                rm -f "$tmp_log"
+                return 1
+            fi
+        else
+            rm -f "$tmp_log"
+        fi
+    fi
+    echo "$removed"
+}
+
+# 清理新舊兩份刪除日誌（還原功能會同時讀取兩者），輸出被移除的總筆數
+# Prune both the current and the legacy deletion log (restore reads both); prints the total number removed
+prune_deletion_logs() {
+    local paths_file="$1"
+    local dry_run="$2"
+    local total=0
+    local log_file count
+
+    for log_file in "$(get_deletion_log_file)" "$TRASH_DIR/.deletion_log"; do
+        if count=$(prune_deletion_log "$log_file" "$paths_file" "$dry_run"); then
+            total=$((total + count))
+        else
+            warn_msg "無法清理刪除日誌: $log_file"
+            warn_msg "Failed to prune deletion log: $log_file"
+        fi
+    done
+    echo "$total"
+}
+
+# 依時間與原始路徑條件找出垃圾桶項目，供 --purge 與 --list 共用
+# Collect trash items matching the age and original-path conditions, shared by --purge and --list
+# 結果存入 COLLECT_ITEMS / COLLECT_SIZES (KiB) / COLLECT_TOTAL_KIB / COLLECT_LABEL_ZH / COLLECT_LABEL_EN / COLLECT_CUTOFF_DISPLAY
+# 回傳 (Returns): 0 = 成功 (ok), 1 = 錯誤 (error), 2 = 垃圾桶目錄不存在 (trash directory does not exist)
+collect_trash_items() {
+    local age_spec="$1"
+    local age_given="$2"
+    local for_purge="$3"
+    local label_zh=""
+    local label_en=""
+
+    # 未指定時間條件（只用 --purge-path）時，不限制刪除時間
+    # Without an age spec (--purge-path only) the deletion time is unrestricted
+    if [ "$age_given" = "1" ]; then
+        parse_purge_age "$age_spec" || return 1
+        label_zh="$PURGE_LABEL_ZH"
+        label_en="$PURGE_LABEL_EN"
+    else
+        PURGE_CUTOFF=99999999999999
+    fi
+    local cutoff="$PURGE_CUTOFF"
+
+    resolve_purge_paths || return 1
+    if [ ${#PURGE_PATH_DISPLAY[@]} -gt 0 ]; then
+        local joined="${PURGE_PATH_DISPLAY[0]}"
+        local k
+        for ((k=1; k<${#PURGE_PATH_DISPLAY[@]}; k++)); do
+            joined="$joined, ${PURGE_PATH_DISPLAY[k]}"
+        done
+        if [ "$age_given" = "1" ]; then
+            label_zh="原始路徑在 $joined 之下且$label_zh"
+            label_en="originally under $joined and $label_en"
+        else
+            label_zh="原始路徑在 $joined 之下"
+            label_en="originally under $joined"
+        fi
+    fi
+
+    # 垃圾桶位置設定錯誤時，永久刪除可能波及垃圾桶以外的檔案，因此清除前先嚴格檢查（列出時不需要）
+    # A misconfigured trash location could make a permanent purge reach files outside the trash, so validate strictly before purging (not needed for listing)
+    if [ "$for_purge" = "1" ]; then
+        if [[ "$TRASH_DIR" != /* ]]; then
+            error_msg "垃圾桶目錄必須是絕對路徑: '$TRASH_DIR'"
+            error_msg "Trash directory must be an absolute path: '$TRASH_DIR'"
+            return 1
+        fi
+        if is_protected "$TRASH_DIR"; then
+            error_msg "拒絕清除受保護的目錄: '$TRASH_DIR'"
+            error_msg "Refused to purge protected directory: '$TRASH_DIR'"
+            return 1
+        fi
     fi
     if [ ! -d "$TRASH_DIR" ]; then
-        echo "垃圾桶目錄不存在，沒有需要清除的項目 (Trash directory does not exist, nothing to purge)"
-        return 0
+        return 2
     fi
     # macOS 的 ~/.Trash 需要「完全取用磁碟」權限才能讀取
     # Reading ~/.Trash on macOS requires Full Disk Access
@@ -726,67 +1077,295 @@ purge_trash() {
         trash_root="${trash_root%/}"
     done
 
-    # 計算截止時間（本地時間，與垃圾桶檔名中的時間戳記一致）
-    # Compute the cutoff in local time, matching the timestamps in trash item names
-    local now cutoff_epoch cutoff
-    now=$(date +%s)
-    cutoff_epoch=$((now - days * 86400))
-    if [ "$cutoff_epoch" -lt 0 ]; then
-        cutoff=0
-    else
-        cutoff=$(format_epoch "$cutoff_epoch")
-        if [ -z "$cutoff" ]; then
-            error_msg "無法計算截止時間"
-            error_msg "Failed to compute purge cutoff time"
-            return 1
-        fi
+    PURGE_TRASH_ROOT="$trash_root"
+
+    # 截止時間為本地時間，與垃圾桶檔名中的時間戳記一致（已由 parse_purge_age 計算）
+    # The cutoff is local time, matching the timestamps in trash item names (computed by parse_purge_age)
+    COLLECT_CUTOFF_DISPLAY=""
+    if [ "$age_given" = "1" ] && [ ${#cutoff} -eq 14 ]; then
+        COLLECT_CUTOFF_DISPLAY="${cutoff:0:4}-${cutoff:4:2}-${cutoff:6:2} ${cutoff:8:2}:${cutoff:10:2}:${cutoff:12:2}"
     fi
 
     # 找出過期項目；-prune 避免進入已刪除的目錄內部，只處理最上層的垃圾桶項目
     # Collect expired items; -prune keeps find out of trashed directories so only top-level trash items are considered
-    local candidates=()
-    local candidate_sizes=()
-    local total_kib=0
+    COLLECT_ITEMS=()
+    COLLECT_SIZES=()
+    COLLECT_TOTAL_KIB=0
     local item size
     while IFS= read -r -d '' item; do
-        if ! trash_item_expired "$item" "$cutoff"; then
+        if ! trash_item_matches "$item" "$cutoff"; then
             continue
         fi
-        if [ -d "$item" ] && [ ! -L "$item" ] && contains_unexpired_trash_item "$item" "$cutoff"; then
-            warn_msg "略過含有未過期項目的目錄: '$item'"
-            warn_msg "Skipped directory containing unexpired trash items: '$item'"
+        if [ -d "$item" ] && [ ! -L "$item" ] && contains_unmatched_trash_item "$item" "$cutoff"; then
+            warn_msg "略過含有不符合條件項目的目錄: '$item'"
+            warn_msg "Skipped directory containing trash items that do not match the conditions: '$item'"
             continue
         fi
         size=$(disk_usage_kib "$item")
-        candidates+=("$item")
-        candidate_sizes+=("$size")
-        total_kib=$((total_kib + size))
+        COLLECT_ITEMS+=("$item")
+        COLLECT_SIZES+=("$size")
+        COLLECT_TOTAL_KIB=$((COLLECT_TOTAL_KIB + size))
     done < <(find "$trash_root" -mindepth 1 -name "$TRASH_ITEM_GLOB" -prune -print0 2>/dev/null)
 
+    COLLECT_LABEL_ZH="$label_zh"
+    COLLECT_LABEL_EN="$label_en"
+    return 0
+}
+
+
+# 列出垃圾桶中符合條件的項目（唯讀，不刪除任何東西）
+# List trash items matching the conditions (read-only, nothing is deleted)
+# 項目輸出到 stdout，依刪除時間由舊到新排序；統計摘要輸出到 stderr，方便搭配管線使用
+# Rows go to stdout sorted by deletion time (oldest first); the summary goes to stderr so pipes stay clean
+list_trash() {
+    local age_spec="$1"
+    local age_given="$2"
+
+    collect_trash_items "$age_spec" "$age_given" 0
+    local collect_status=$?
+    if [ $collect_status -eq 2 ]; then
+        echo "垃圾桶目錄不存在 (Trash directory does not exist): $TRASH_DIR" >&2
+        return 0
+    elif [ $collect_status -ne 0 ]; then
+        return 1
+    fi
+
+    if [ ${#COLLECT_ITEMS[@]} -eq 0 ]; then
+        if [ -n "$COLLECT_LABEL_ZH" ]; then
+            echo "垃圾桶中沒有${COLLECT_LABEL_ZH}的項目 (No trash items $COLLECT_LABEL_EN)" >&2
+        else
+            echo "垃圾桶是空的 (No trash items)" >&2
+        fi
+        return 0
+    fi
+
+    local rows=""
+    local files=0 dirs=0 links=0
+    local i item raw_ts type
+    for ((i=0; i<${#COLLECT_ITEMS[@]}; i++)); do
+        item="${COLLECT_ITEMS[i]}"
+        raw_ts="${item##*/}"
+        raw_ts="${raw_ts%__*}"
+        raw_ts="${raw_ts##*__}"
+        if [ -L "$item" ]; then
+            type="symlink"
+            links=$((links + 1))
+        elif [ -d "$item" ]; then
+            type="directory"
+            dirs=$((dirs + 1))
+        else
+            type="file"
+            files=$((files + 1))
+        fi
+        rows="${rows}${raw_ts}"$'\t'"${COLLECT_SIZES[i]}"$'\t'"${type}"$'\t'"$(trash_item_original_path "$item")"$'\n'
+    done
+
+    local ts size_kib original
+    printf '%s' "$rows" | LC_ALL=C sort | while IFS=$'\t' read -r ts size_kib type original; do
+        printf '%s-%s-%s %s:%s:%s  %9s  %-9s %s\n' \
+            "${ts:0:4}" "${ts:4:2}" "${ts:6:2}" "${ts:9:2}" "${ts:11:2}" "${ts:13:2}" \
+            "$(format_kib "$size_kib")" "$type" "$original"
+    done
+
+    local total_size
+    total_size=$(format_kib "$COLLECT_TOTAL_KIB")
+    local condition_zh="" condition_en=""
+    if [ -n "$COLLECT_LABEL_ZH" ]; then
+        condition_zh="符合條件（${COLLECT_LABEL_ZH}）："
+        condition_en=" matching (${COLLECT_LABEL_EN})"
+    fi
+    echo -e "${GREEN}${condition_zh}共 ${#COLLECT_ITEMS[@]} 個項目（$files 個檔案、$dirs 個目錄、$links 個符號連結），佔用約 ${total_size} (Total ${#COLLECT_ITEMS[@]} trash items${condition_en}: $files files, $dirs directories, $links symlinks, about ${total_size})${NC}" >&2
+}
+
+# 顯示垃圾桶摘要統計（唯讀）：總數與類型、佔用空間、最早/最新刪除時間、依刪除時間分佈、依原始目錄統計前五名
+# Show summary statistics for the trash (read-only): totals and types, disk usage, oldest/newest deletion, age distribution, top original directories
+# 可搭配 --purge <時間條件> / --purge-path <路徑> 當作篩選條件
+# --purge <age> / --purge-path <path> act as filters here
+stats_trash() {
+    local age_spec="$1"
+    local age_given="$2"
+
+    collect_trash_items "$age_spec" "$age_given" 0
+    local collect_status=$?
+    if [ $collect_status -eq 2 ]; then
+        echo "垃圾桶目錄不存在 (Trash directory does not exist): $TRASH_DIR"
+        return 0
+    elif [ $collect_status -ne 0 ]; then
+        return 1
+    fi
+
+    if [ ${#COLLECT_ITEMS[@]} -eq 0 ]; then
+        if [ -n "$COLLECT_LABEL_ZH" ]; then
+            echo "垃圾桶中沒有${COLLECT_LABEL_ZH}的項目 (No trash items $COLLECT_LABEL_EN)"
+        else
+            echo "垃圾桶是空的 (No trash items)"
+        fi
+        return 0
+    fi
+
+    # 時間分佈的界線：以目前時間往回推，格式與垃圾桶檔名中的本地時間戳記相同
+    # Age bucket boundaries: walk back from now, in the same local-time format as the names
+    local now c1 c7 c30 c90
+    now=$(date +%s)
+    c1=$(format_epoch $((now - 86400)))
+    c7=$(format_epoch $((now - 7 * 86400)))
+    c30=$(format_epoch $((now - 30 * 86400)))
+    c90=$(format_epoch $((now - 90 * 86400)))
+    if [ -z "$c1" ] || [ -z "$c7" ] || [ -z "$c30" ] || [ -z "$c90" ]; then
+        error_msg "無法計算統計用的時間界線"
+        error_msg "Failed to compute age bucket boundaries"
+        return 1
+    fi
+
+    local files=0 dirs=0 links=0
+    local bucket_count=(0 0 0 0 0)
+    local bucket_kib=(0 0 0 0 0)
+    local oldest="" newest=""
+    local dir_rows=""
+    local i item raw_ts ts14 bucket original
+    for ((i=0; i<${#COLLECT_ITEMS[@]}; i++)); do
+        item="${COLLECT_ITEMS[i]}"
+        raw_ts="${item##*/}"
+        raw_ts="${raw_ts%__*}"
+        raw_ts="${raw_ts##*__}"
+        ts14="${raw_ts:0:8}${raw_ts:9:6}"
+
+        if [ -L "$item" ]; then
+            links=$((links + 1))
+        elif [ -d "$item" ]; then
+            dirs=$((dirs + 1))
+        else
+            files=$((files + 1))
+        fi
+
+        if [ -z "$oldest" ] || [ $((10#$ts14)) -lt $((10#$oldest)) ]; then
+            oldest="$ts14"
+        fi
+        if [ -z "$newest" ] || [ $((10#$ts14)) -gt $((10#$newest)) ]; then
+            newest="$ts14"
+        fi
+
+        if [ $((10#$ts14)) -gt $((10#$c1)) ]; then
+            bucket=0
+        elif [ $((10#$ts14)) -gt $((10#$c7)) ]; then
+            bucket=1
+        elif [ $((10#$ts14)) -gt $((10#$c30)) ]; then
+            bucket=2
+        elif [ $((10#$ts14)) -gt $((10#$c90)) ]; then
+            bucket=3
+        else
+            bucket=4
+        fi
+        bucket_count[bucket]=$((bucket_count[bucket] + 1))
+        bucket_kib[bucket]=$((bucket_kib[bucket] + COLLECT_SIZES[i]))
+
+        original=$(trash_item_original_path "$item")
+        original="${original%/*}"
+        dir_rows="${dir_rows}${COLLECT_SIZES[i]}"$'\t'"${original:-/}"$'\n'
+    done
+
+    echo "垃圾桶統計 (Trash statistics)"
+    echo "  位置 (Location):        $TRASH_DIR"
+    if [ -n "$COLLECT_LABEL_ZH" ]; then
+        echo "  篩選條件 (Filter):      ${COLLECT_LABEL_ZH} ($COLLECT_LABEL_EN)"
+    fi
+    echo "  項目數 (Items):         ${#COLLECT_ITEMS[@]}（檔案 ${files}、目錄 ${dirs}、符號連結 $links / files $files, directories $dirs, symlinks ${links}）"
+    echo "  佔用空間 (Disk usage):  $(format_kib "$COLLECT_TOTAL_KIB")"
+    echo "  最早刪除 (Oldest):      ${oldest:0:4}-${oldest:4:2}-${oldest:6:2} ${oldest:8:2}:${oldest:10:2}:${oldest:12:2}"
+    echo "  最新刪除 (Newest):      ${newest:0:4}-${newest:4:2}-${newest:6:2} ${newest:8:2}:${newest:10:2}:${newest:12:2}"
+
+    echo ""
+    echo "依刪除時間分佈 (By age):"
+    local labels=("1 天內 (< 1 day)" "1–7 天 (1–7 days)" "7–30 天 (7–30 days)" "30–90 天 (30–90 days)" "超過 90 天 (> 90 days)")
+    for ((i=0; i<5; i++)); do
+        printf '  %6d 項  %10s  %s\n' "${bucket_count[i]}" "$(format_kib "${bucket_kib[i]}")" "${labels[i]}"
+    done
+
+    echo ""
+    echo "依原始目錄，佔用空間前五名 (Top 5 original directories by size):"
+    local size_kib item_count dir_path
+    printf '%s' "$dir_rows" | awk -F'\t' '{ size[$2] += $1; count[$2]++ } END { for (d in size) printf "%d\t%d\t%s\n", size[d], count[d], d }' \
+        | LC_ALL=C sort -t$'\t' -k1,1nr -k3,3 | head -5 \
+        | while IFS=$'\t' read -r size_kib item_count dir_path; do
+            printf '  %10s  %6d 項  %s\n' "$(format_kib "$size_kib")" "$item_count" "$dir_path"
+        done
+}
+
+# 永久刪除垃圾桶中符合時間條件的過期項目，並一併清除對應的刪除日誌記錄
+# Permanently purge expired trash items matching the age spec, and prune their deletion log records
+purge_trash() {
+    local age_spec="$1"
+    local force="$2"
+    local verbose="$3"
+    local dry_run="$4"
+    local age_given="$5"
+
+    collect_trash_items "$age_spec" "$age_given" 1
+    local collect_status=$?
+    if [ $collect_status -eq 2 ]; then
+        echo "垃圾桶目錄不存在，沒有需要清除的項目 (Trash directory does not exist, nothing to purge)"
+        return 0
+    elif [ $collect_status -ne 0 ]; then
+        return 1
+    fi
+    local label_zh="$COLLECT_LABEL_ZH"
+    local label_en="$COLLECT_LABEL_EN"
+    local cutoff_display="$COLLECT_CUTOFF_DISPLAY"
+    local candidates=("${COLLECT_ITEMS[@]}")
+    local candidate_sizes=("${COLLECT_SIZES[@]}")
+    local total_kib="$COLLECT_TOTAL_KIB"
+    local trash_root="$PURGE_TRASH_ROOT"
+    local item
+
     if [ ${#candidates[@]} -eq 0 ]; then
-        echo "垃圾桶中沒有超過 $days 天的項目 (No trash items older than $days days)"
+        echo "垃圾桶中沒有${label_zh}的項目 (No trash items $label_en)"
         return 0
     fi
 
     local total_size
     total_size=$(format_kib "$total_kib")
 
+    # 記錄被永久刪除的項目路徑，稍後據此清除刪除日誌
+    # Track purged item paths so their deletion log records can be pruned afterwards
+    local paths_file=""
+    paths_file=$(mktemp "${TMPDIR:-/tmp}/better-rm-purged.XXXXXX" 2>/dev/null) || paths_file=""
+
     # 試執行：只列出預計刪除的項目與可釋放空間，不做任何變更
     # Dry run: only list what would be purged and the space it would free, without changing anything
     local i
     if [ "$dry_run" = "1" ]; then
+        local dry_log_records=0
         for ((i=0; i<${#candidates[@]}; i++)); do
             echo "將永久刪除 (would purge) '${candidates[i]}' ($(format_kib "${candidate_sizes[i]}"))"
+            if [ -n "$paths_file" ]; then
+                printf '%s\n' "${candidates[i]}" >> "$paths_file"
+            fi
         done
-        success_msg "試執行：將永久刪除 ${#candidates[@]} 個超過 $days 天的項目，預計釋放約 $total_size (Dry run: would purge ${#candidates[@]} trash items older than $days days, freeing about $total_size)"
+        if [ -n "$paths_file" ]; then
+            dry_log_records=$(prune_deletion_logs "$paths_file" 1)
+            rm -f "$paths_file"
+        fi
+        if [ -n "$cutoff_display" ]; then
+            echo "截止時間 (cutoff): $cutoff_display"
+        fi
+        success_msg "試執行：將永久刪除 ${#candidates[@]} 個${label_zh}的項目，預計釋放約 ${total_size}，並清除 ${dry_log_records} 筆刪除日誌記錄 (Dry run: would purge ${#candidates[@]} trash items $label_en, freeing about $total_size, and remove $dry_log_records deletion log records)"
         return 0
     fi
 
     if [ "$force" != "1" ]; then
-        echo -n "rm: 永久刪除垃圾桶中 ${#candidates[@]} 個超過 $days 天的項目（約 ${total_size}）？此操作無法復原 (permanently delete ${#candidates[@]} trash items older than $days days (about $total_size)? This cannot be undone) (y/N) " >&2
+        # 先列出完整的項目清單（與 --dry-run 相同），讓使用者看清楚再確認；輸出到 stderr 以便與提示一起顯示
+        # Show the full item list first (same as --dry-run) so the user sees exactly what will go; on stderr to stay next to the prompt
+        for ((i=0; i<${#candidates[@]}; i++)); do
+            echo "將永久刪除 (would purge) '${candidates[i]}' ($(format_kib "${candidate_sizes[i]}"))" >&2
+        done
+        if [ -n "$cutoff_display" ]; then
+            echo "截止時間 (cutoff): $cutoff_display" >&2
+        fi
+        echo -n "rm: 永久刪除垃圾桶中 ${#candidates[@]} 個${label_zh}的項目（約 ${total_size}）？此操作無法復原 (permanently delete ${#candidates[@]} trash items $label_en (about $total_size)? This cannot be undone) (y/N) " >&2
         read -r response
         if [[ ! "$response" =~ ^[yY] ]]; then
             echo "操作已取消 / Operation cancelled" >&2
+            [ -n "$paths_file" ] && rm -f "$paths_file"
             return 0
         fi
     fi
@@ -815,6 +1394,9 @@ purge_trash() {
 
         purged=$((purged + 1))
         freed_kib=$((freed_kib + candidate_sizes[i]))
+        if [ -n "$paths_file" ]; then
+            printf '%s\n' "$item" >> "$paths_file"
+        fi
         if [ "$verbose" = "1" ]; then
             success_msg "已永久刪除 '$item' (purged, $(format_kib "${candidate_sizes[i]}"))"
         fi
@@ -827,9 +1409,23 @@ purge_trash() {
         done
     done
 
+    # 被永久刪除的項目已無法還原，一併清除其刪除日誌記錄
+    # Purged items can no longer be restored, so drop their deletion log records too
+    local pruned_records=0
+    if [ -z "$paths_file" ]; then
+        warn_msg "無法建立暫存檔，已略過刪除日誌清理"
+        warn_msg "Failed to create a temporary file, deletion log pruning skipped"
+    elif [ -s "$paths_file" ]; then
+        pruned_records=$(prune_deletion_logs "$paths_file" 0)
+    fi
+    [ -n "$paths_file" ] && rm -f "$paths_file"
+
     local freed_size
     freed_size=$(format_kib "$freed_kib")
-    success_msg "已永久刪除 $purged 個超過 $days 天的項目，釋放約 $freed_size (Purged $purged trash items older than $days days, freed about $freed_size)"
+    success_msg "已永久刪除 $purged 個${label_zh}的項目，釋放約 ${freed_size} (Purged $purged trash items $label_en, freed about $freed_size)"
+    if [ "$pruned_records" -gt 0 ]; then
+        success_msg "已清除 $pruned_records 筆刪除日誌記錄 (Removed $pruned_records deletion log records)"
+    fi
     return $status
 }
 
@@ -846,7 +1442,11 @@ main() {
     local restore_mode=0
     local restore_target=""
     local purge_mode=0
-    local purge_days=""
+    local purge_age=""
+    local purge_age_given=0
+    local list_mode=0
+    local stats_mode=0
+    local purge_paths=()
     local dry_run=0
     local files=()
     
@@ -887,17 +1487,44 @@ main() {
                 purge_mode=1
                 shift
                 if [ $# -gt 0 ]; then
-                    purge_days="$1"
+                    purge_age="$1"
+                    purge_age_given=1
                     shift
                 else
-                    error_msg "選項 '--purge' 需要一個引數（天數）"
-                    error_msg "option '--purge' requires an argument (days)"
+                    error_msg "選項 '--purge' 需要一個引數（時間條件）"
+                    error_msg "option '--purge' requires an argument (age)"
                     return 1
                 fi
                 ;;
             --purge=*)
                 purge_mode=1
-                purge_days="${1#--purge=}"
+                purge_age="${1#--purge=}"
+                purge_age_given=1
+                shift
+                ;;
+            --list)
+                list_mode=1
+                shift
+                ;;
+            --stats)
+                stats_mode=1
+                shift
+                ;;
+            --purge-path)
+                purge_mode=1
+                shift
+                if [ $# -gt 0 ]; then
+                    purge_paths+=("$1")
+                    shift
+                else
+                    error_msg "選項 '--purge-path' 需要一個引數（原始路徑前綴）"
+                    error_msg "option '--purge-path' requires an argument (original path prefix)"
+                    return 1
+                fi
+                ;;
+            --purge-path=*)
+                purge_mode=1
+                purge_paths+=("${1#--purge-path=}")
                 shift
                 ;;
             --dry-run)
@@ -993,11 +1620,33 @@ main() {
         esac
     done
     
+    # 列出 / 統計模式：--purge / --purge-path 在此只當作篩選條件，不會刪除任何東西
+    # List / stats mode: --purge / --purge-path act only as filters here and nothing is deleted
+    if [ "$list_mode" = "1" ] || [ "$stats_mode" = "1" ]; then
+        if [ "$list_mode" = "1" ] && [ "$stats_mode" = "1" ]; then
+            error_msg "選項 '--list' 與 '--stats' 不能同時使用"
+            error_msg "options '--list' and '--stats' cannot be used together"
+            return 1
+        fi
+        if [ "$restore_mode" = "1" ] || [ "$dry_run" = "1" ] || [ ${#files[@]} -gt 0 ]; then
+            error_msg "選項 '--list' / '--stats' 不能與 '--restore'、'--dry-run' 或檔案參數同時使用"
+            error_msg "options '--list' / '--stats' cannot be combined with '--restore', '--dry-run' or file operands"
+            return 1
+        fi
+        PURGE_PATH_INPUTS=("${purge_paths[@]}")
+        if [ "$stats_mode" = "1" ]; then
+            stats_trash "$purge_age" "$purge_age_given"
+        else
+            list_trash "$purge_age" "$purge_age_given"
+        fi
+        return $?
+    fi
+
     # 試執行目前只支援清除模式
     # Dry run is currently supported only in purge mode
     if [ "$dry_run" = "1" ] && [ "$purge_mode" != "1" ]; then
-        error_msg "選項 '--dry-run' 只能與 '--purge' 一起使用"
-        error_msg "option '--dry-run' can only be used with '--purge'"
+        error_msg "選項 '--dry-run' 只能與 '--purge' 或 '--purge-path' 一起使用"
+        error_msg "option '--dry-run' can only be used with '--purge' or '--purge-path'"
         return 1
     fi
 
@@ -1005,11 +1654,12 @@ main() {
     # If in purge mode
     if [ "$purge_mode" = "1" ]; then
         if [ "$restore_mode" = "1" ] || [ ${#files[@]} -gt 0 ]; then
-            error_msg "選項 '--purge' 不能與 '--restore' 或檔案參數同時使用"
-            error_msg "option '--purge' cannot be combined with '--restore' or file operands"
+            error_msg "選項 '--purge' 與 '--purge-path' 不能與 '--restore' 或檔案參數同時使用"
+            error_msg "options '--purge' and '--purge-path' cannot be combined with '--restore' or file operands"
             return 1
         fi
-        purge_trash "$purge_days" "$force_mode" "$verbose" "$dry_run"
+        PURGE_PATH_INPUTS=("${purge_paths[@]}")
+        purge_trash "$purge_age" "$force_mode" "$verbose" "$dry_run" "$purge_age_given"
         return $?
     fi
 
@@ -1092,4 +1742,8 @@ main() {
 
 # 執行主程式
 # Execute main program
-main "$@"
+# 同一行加上 exit，讓 bash 在 main 結束後不再往下讀檔案：腳本執行期間（例如等待確認提示時）若被覆寫更新，
+# bash 會從舊的讀取位置繼續讀新內容而執行到殘缺片段
+# Keep exit on the same line so bash never reads past main: if this file is overwritten while it runs
+# (e.g. while waiting at a confirmation prompt), bash would otherwise resume at the old offset in the new content
+main "$@"; exit $?

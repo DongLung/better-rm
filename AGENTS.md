@@ -119,7 +119,7 @@ This project uses GitHub Copilot, Google Antigravity, Pi, Grok Build, and AI-ass
 
 ### Medium Priority
 - [ ] Enhanced hash calculation for large directories
-- [ ] Trash statistics and reporting
+- [x] Trash statistics and reporting (`rm --stats`)
 - [ ] Integration with file managers
 - [ ] Support for network filesystems
 

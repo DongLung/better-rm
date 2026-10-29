@@ -779,6 +779,461 @@ else
 fi
 
 # ============================================================================
+# 測試 15: 週/月/日期時間條件與刪除日誌清理
+# (Test 15: Week/Month/Date-Time Age Specs and Deletion Log Pruning)
+# ============================================================================
+test_title "測試 15: 週/月/日期時間條件與刪除日誌清理"
+
+setup
+cd "$TEST_WORK_DIR"
+mkdir -p "$TEST_TRASH_DIR/old"
+OLD_ITEM="$TEST_TRASH_DIR/old/old.txt__20200101_120000_000000000__aaa"
+MID_ITEM="$TEST_TRASH_DIR/old/mid.txt__20240601_090000_000000000__bbb"
+NEW_ITEM="$TEST_TRASH_DIR/old/new.txt__20990101_120000_000000000__ccc"
+
+reset_age_fixtures() {
+    mkdir -p "$TEST_TRASH_DIR/old"
+    echo old > "$OLD_ITEM"
+    echo mid > "$MID_ITEM"
+    echo new > "$NEW_ITEM"
+}
+
+test_item "週/月/天數單位 (2w、1m、30d、--purge=3m) 保留未來項目並清除舊項目"
+age_ok=true
+for age_spec in 2w 1m 30d 3m 2W 1M 5D; do
+    reset_age_fixtures
+    "$BETTER_RM" -f --purge "$age_spec" >/dev/null 2>&1
+    if [ -e "$OLD_ITEM" ] || [ -e "$MID_ITEM" ] || [ ! -e "$NEW_ITEM" ]; then
+        age_ok=false
+    fi
+done
+reset_age_fixtures
+"$BETTER_RM" -f --purge=2w >/dev/null 2>&1
+if [ -e "$OLD_ITEM" ] || [ ! -e "$NEW_ITEM" ]; then
+    age_ok=false
+fi
+if [ "$age_ok" = true ]; then
+    test_pass "各種單位皆正確清除舊項目並保留未來項目"
+else
+    test_fail "週/月/天數單位處理不正確"
+fi
+
+test_item "絕對日期 2024-01-01 清除 2020 項目並保留 2024-06 與 2099 項目"
+reset_age_fixtures
+"$BETTER_RM" -f --purge 2024-01-01 >/dev/null 2>&1
+if [ ! -e "$OLD_ITEM" ] && [ -e "$MID_ITEM" ] && [ -e "$NEW_ITEM" ]; then
+    test_pass "日期條件邊界正確"
+else
+    test_fail "日期條件邊界不正確"
+fi
+
+test_item "日期加時間 (空白與 T 分隔) 以時間邊界判斷"
+reset_age_fixtures
+"$BETTER_RM" -f --purge "2024-06-01 08:59:59" >/dev/null 2>&1
+before_boundary_kept=false
+[ -e "$MID_ITEM" ] && before_boundary_kept=true
+reset_age_fixtures
+"$BETTER_RM" -f --purge 2024-06-01T09:00 >/dev/null 2>&1
+if [ "$before_boundary_kept" = true ] && [ ! -e "$OLD_ITEM" ] && [ ! -e "$MID_ITEM" ] && [ -e "$NEW_ITEM" ]; then
+    test_pass "日期時間條件正確"
+else
+    test_fail "日期時間條件不正確"
+fi
+
+test_item "拒絕無效單位、日期、時間與未來時間"
+invalid_age_rejected=true
+for invalid_age in 5x 2026-13-01 2026-02-30 "2026-01-01 25:00" "2026-01-01 10:61" 2099-01-01 1.5d 2024-1-1 ""; do
+    if "$BETTER_RM" -f --purge "$invalid_age" >/dev/null 2>&1; then
+        invalid_age_rejected=false
+    fi
+done
+if [ "$invalid_age_rejected" = true ] && [ -e "$NEW_ITEM" ]; then
+    test_pass "無效時間條件正確回傳失敗"
+else
+    test_fail "無效時間條件未被拒絕"
+fi
+
+# 寫入指向測試項目的日誌行（含結尾斜線造成的 // 路徑），並保留近期的真實刪除記錄
+# Write log lines pointing at the fixtures (including a // path from a trailing slash) next to a real recent deletion
+setup_log_fixtures() {
+    setup
+    cd "$TEST_WORK_DIR"
+    mkdir -p "$TEST_TRASH_DIR/old" "$TEST_TRASH_DIR/dir__20200101_120000_000000000__ddd/inner"
+    echo old > "$OLD_ITEM"
+    echo mid > "$MID_ITEM"
+    echo inner > "$TEST_TRASH_DIR/dir__20200101_120000_000000000__ddd/inner/f.txt__20190101_120000_000000000__eee"
+    echo recent > recent_log.txt
+    "$BETTER_RM" recent_log.txt
+    {
+        echo "20200101_120000_000000000 | /old/old.txt | $TEST_TRASH_DIR//old/old.txt__20200101_120000_000000000__aaa | aaa | file"
+        echo "20240601_090000_000000000 | /old/mid.txt | $MID_ITEM | bbb | file"
+        echo "20190101_120000_000000000 | /x/dir/inner/f.txt | $TEST_TRASH_DIR/dir__20200101_120000_000000000__ddd/inner/f.txt__20190101_120000_000000000__eee | eee | file"
+        echo "this line does not parse"
+    } >> "$TEST_STATE_DIR/deletion.log"
+}
+
+test_item "清除後同步移除對應的刪除日誌記錄（含目錄內項目），保留其他記錄與標頭"
+setup_log_fixtures
+log_file="$TEST_STATE_DIR/deletion.log"
+"$BETTER_RM" -f --purge 2024-01-01 >/dev/null 2>&1
+if ! grep -q "old.txt__20200101" "$log_file" && \
+   ! grep -q "f.txt__20190101" "$log_file" && \
+   grep -q "mid.txt__20240601" "$log_file" && \
+   grep -q "recent_log.txt" "$log_file" && \
+   grep -q "this line does not parse" "$log_file" && \
+   grep -q "^# Better-RM Deletion Log" "$log_file"; then
+    test_pass "日誌只移除已永久刪除項目的記錄"
+else
+    test_fail "日誌清理不正確: $(cat "$log_file")"
+fi
+
+test_item "日誌檔案權限維持僅限使用者存取"
+log_mode=$(stat -c %a "$log_file" 2>/dev/null || stat -f %Lp "$log_file" 2>/dev/null)
+if [ "$log_mode" = "600" ]; then
+    test_pass "日誌權限為 600"
+else
+    test_fail "日誌權限為 $log_mode"
+fi
+
+test_item "清除後 --restore 仍可還原近期刪除的檔案"
+rm -f recent_log.txt
+if "$BETTER_RM" --restore recent_log.txt >/dev/null 2>&1 && [ -f recent_log.txt ]; then
+    test_pass "近期項目仍可還原"
+else
+    test_fail "近期項目無法還原"
+fi
+
+test_item "--dry-run 與確認選擇否 (n) 不修改日誌，且 dry-run 顯示將清除的記錄數"
+setup_log_fixtures
+cp "$log_file" "$TEST_WORK_DIR/log.before"
+dry_output=$("$BETTER_RM" --purge 2024-01-01 --dry-run 2>&1)
+echo n | "$BETTER_RM" --purge 2024-01-01 >/dev/null 2>&1
+if cmp -s "$log_file" "$TEST_WORK_DIR/log.before" && echo "$dry_output" | grep -q "清除 2 筆刪除日誌記錄"; then
+    test_pass "試執行與取消皆未修改日誌"
+else
+    test_fail "試執行或取消修改了日誌: $dry_output"
+fi
+
+test_item "同步清理舊版垃圾桶日誌 .deletion_log"
+setup_log_fixtures
+echo "20200101_120000_000000000 | /old/old.txt | $OLD_ITEM | aaa | file" > "$TEST_TRASH_DIR/.deletion_log"
+"$BETTER_RM" -f --purge 2024-01-01 >/dev/null 2>&1
+if ! grep -q "old.txt__20200101" "$TEST_TRASH_DIR/.deletion_log"; then
+    test_pass "舊版日誌記錄已清除"
+else
+    test_fail "舊版日誌記錄未清除"
+fi
+
+# ============================================================================
+# 測試 16: 依原始路徑前綴清除 (Test 16: Purge by Original Path Prefix)
+# ============================================================================
+test_title "測試 16: 依原始路徑前綴清除"
+
+# 以 TRASH_DIR 加上原始路徑建立垃圾桶項目，內容用 echo 即可
+# Build a trash item at TRASH_DIR plus the original path
+make_trash_item() {
+    mkdir -p "$(dirname "$TEST_TRASH_DIR$1")"
+    echo x > "$TEST_TRASH_DIR$1"
+}
+
+setup
+cd "$TEST_WORK_DIR"
+PA_OLD="/pathtest/proj/a/old.txt__20200101_120000_000000000__aaa"
+PA_SUB="/pathtest/proj/a/sub/mid.txt__20240601_090000_000000000__bbb"
+PA_NEW="/pathtest/proj/a/new.txt__20990101_120000_000000000__ccc"
+PA_AB="/pathtest/proj/ab/other.txt__20200101_120000_000000000__ddd"
+reset_path_fixtures() {
+    setup
+    cd "$TEST_WORK_DIR"
+    make_trash_item "$PA_OLD"
+    make_trash_item "$PA_SUB"
+    make_trash_item "$PA_NEW"
+    make_trash_item "$PA_AB"
+}
+
+test_item "--purge-path 單獨使用：清除該路徑之下所有項目，且以目錄為界不誤刪 /ab"
+reset_path_fixtures
+"$BETTER_RM" -f --purge-path /pathtest/proj/a >/dev/null 2>&1
+if [ ! -e "$TEST_TRASH_DIR$PA_OLD" ] && [ ! -e "$TEST_TRASH_DIR$PA_SUB" ] && [ ! -e "$TEST_TRASH_DIR$PA_NEW" ] && \
+   [ -e "$TEST_TRASH_DIR$PA_AB" ]; then
+    test_pass "只清除 /pathtest/proj/a 之下的項目，/pathtest/proj/ab 保留"
+else
+    test_fail "路徑前綴比對不正確"
+fi
+
+test_item "--purge-path 搭配 --purge 時間條件：兩個條件都要符合"
+reset_path_fixtures
+"$BETTER_RM" -f --purge 2024-01-01 --purge-path=/pathtest/proj/a >/dev/null 2>&1
+if [ ! -e "$TEST_TRASH_DIR$PA_OLD" ] && [ -e "$TEST_TRASH_DIR$PA_SUB" ] && [ -e "$TEST_TRASH_DIR$PA_NEW" ] && \
+   [ -e "$TEST_TRASH_DIR$PA_AB" ]; then
+    test_pass "僅清除路徑符合且夠舊的項目"
+else
+    test_fail "路徑搭配時間條件不正確"
+fi
+
+test_item "--purge-path 可重複指定，並接受結尾斜線"
+reset_path_fixtures
+"$BETTER_RM" -f --purge-path /pathtest/proj/ab/ --purge-path /pathtest/proj/a/sub >/dev/null 2>&1
+if [ ! -e "$TEST_TRASH_DIR$PA_AB" ] && [ ! -e "$TEST_TRASH_DIR$PA_SUB" ] && \
+   [ -e "$TEST_TRASH_DIR$PA_OLD" ] && [ -e "$TEST_TRASH_DIR$PA_NEW" ]; then
+    test_pass "多個前綴皆生效"
+else
+    test_fail "多個前綴處理不正確"
+fi
+
+test_item "相對路徑以目前資料夾為基準，符號連結前綴會解析為實際路徑"
+reset_path_fixtures
+real_dir=$(cd "$TEST_WORK_DIR" && pwd -P)
+make_trash_item "$real_dir/local/gone.txt__20200101_120000_000000000__eee"
+make_trash_item "$real_dir/local/sub/gone2.txt__20200101_120000_000000000__fff"
+mkdir -p "$TEST_WORK_DIR/local"
+ln -s "$TEST_WORK_DIR/local" "$TEST_WORK_DIR/link"
+(cd "$TEST_WORK_DIR/local" && "$BETTER_RM" -f --purge-path . >/dev/null 2>&1)
+relative_ok=false
+if [ ! -e "$TEST_TRASH_DIR$real_dir/local/gone.txt__20200101_120000_000000000__eee" ] && \
+   [ ! -e "$TEST_TRASH_DIR$real_dir/local/sub/gone2.txt__20200101_120000_000000000__fff" ] && \
+   [ -e "$TEST_TRASH_DIR$PA_OLD" ]; then
+    relative_ok=true
+fi
+make_trash_item "$real_dir/local/via-link.txt__20200101_120000_000000000__ggg"
+"$BETTER_RM" -f --purge-path "$TEST_WORK_DIR/link" >/dev/null 2>&1
+if [ "$relative_ok" = true ] && [ ! -e "$TEST_TRASH_DIR$real_dir/local/via-link.txt__20200101_120000_000000000__ggg" ]; then
+    test_pass "相對路徑與符號連結前綴皆正確"
+else
+    test_fail "相對路徑或符號連結前綴處理不正確"
+fi
+
+test_item "--dry-run 不刪除項目，並顯示路徑條件"
+reset_path_fixtures
+path_dry_output=$("$BETTER_RM" -f --purge-path /pathtest/proj/a --dry-run 2>&1)
+if [ -e "$TEST_TRASH_DIR$PA_OLD" ] && [ -e "$TEST_TRASH_DIR$PA_NEW" ] && \
+   echo "$path_dry_output" | grep -q "將永久刪除 3 個原始路徑在 /pathtest/proj/a 之下的項目"; then
+    test_pass "試執行未刪除且訊息正確"
+else
+    test_fail "試執行結果不正確: $path_dry_output"
+fi
+
+test_item "依路徑清除時同步清理對應的刪除日誌記錄"
+reset_path_fixtures
+mkdir -p "$TEST_STATE_DIR"
+{
+    echo "20200101_120000_000000000 | /pathtest/proj/a/old.txt | $TEST_TRASH_DIR$PA_OLD | aaa | file"
+    echo "20200101_120000_000000000 | /pathtest/proj/ab/other.txt | $TEST_TRASH_DIR$PA_AB | ddd | file"
+} >> "$TEST_STATE_DIR/deletion.log"
+"$BETTER_RM" -f --purge-path /pathtest/proj/a >/dev/null 2>&1
+if ! grep -q "old.txt__20200101" "$TEST_STATE_DIR/deletion.log" && \
+   grep -q "other.txt__20200101" "$TEST_STATE_DIR/deletion.log"; then
+    test_pass "日誌只移除已清除路徑的記錄"
+else
+    test_fail "日誌清理不正確"
+fi
+
+test_item "拒絕缺少或空白的 --purge-path 引數，且不可與檔案參數並用"
+reset_path_fixtures
+path_invalid_rejected=true
+for invalid_args in "--purge-path" "--purge-path=" "--purge-path /pathtest file.txt"; do
+    # shellcheck disable=SC2086
+    if "$BETTER_RM" -f $invalid_args >/dev/null 2>&1; then
+        path_invalid_rejected=false
+    fi
+done
+if [ "$path_invalid_rejected" = true ] && [ -e "$TEST_TRASH_DIR$PA_OLD" ]; then
+    test_pass "無效的 --purge-path 參數正確回傳失敗"
+else
+    test_fail "無效的 --purge-path 參數未被拒絕"
+fi
+
+# ============================================================================
+# 測試 17: 列出垃圾桶項目 (Test 17: List Trash Items)
+# ============================================================================
+test_title "測試 17: 列出垃圾桶項目"
+
+setup
+cd "$TEST_WORK_DIR"
+make_trash_item "/listtest/a/old.txt__20200101_120000_000000000__aaa"
+make_trash_item "/listtest/a/mid.txt__20240601_090000_000000000__bbb"
+make_trash_item "/listtest/b/new.txt__20990101_120000_000000000__ccc"
+mkdir -p "$TEST_TRASH_DIR/listtest/dir__20210101_120000_000000000__ddd/inner"
+echo x > "$TEST_TRASH_DIR/listtest/dir__20210101_120000_000000000__ddd/inner/f"
+echo foreign > "$TEST_TRASH_DIR/finder-item.txt"
+
+test_item "--list 依刪除時間由舊到新列出項目與原始路徑，且不含非 better-rm 的檔案"
+list_stdout=$("$BETTER_RM" --list 2>/dev/null)
+first_line=$(echo "$list_stdout" | head -1)
+last_line=$(echo "$list_stdout" | tail -1)
+if [ "$(echo "$list_stdout" | wc -l | tr -d ' ')" = "4" ] && \
+   echo "$first_line" | grep -q "^2020-01-01 12:00:00 .* file .*/listtest/a/old.txt$" && \
+   echo "$last_line" | grep -q "^2099-01-01 12:00:00 .* file .*/listtest/b/new.txt$" && \
+   echo "$list_stdout" | grep -q " directory .*/listtest/dir$" && \
+   ! echo "$list_stdout" | grep -q "finder-item"; then
+    test_pass "列出內容、排序與原始路徑正確"
+else
+    test_fail "列出結果不正確: $list_stdout"
+fi
+
+test_item "--list 統計摘要輸出到 stderr（項目數、類型與空間）"
+list_summary=$("$BETTER_RM" --list 2>&1 >/dev/null)
+if echo "$list_summary" | grep -q "共 4 個項目（3 個檔案、1 個目錄、0 個符號連結）" && \
+   echo "$list_summary" | grep -q "佔用約"; then
+    test_pass "統計摘要正確且不污染 stdout"
+else
+    test_fail "統計摘要不正確: $list_summary"
+fi
+
+test_item "--list 搭配 --purge / --purge-path 只篩選，不刪除任何項目"
+before_count=$(find "$TEST_TRASH_DIR" -type f | wc -l | tr -d ' ')
+filtered_age=$("$BETTER_RM" --list --purge 2024-01-01 2>/dev/null)
+filtered_path=$("$BETTER_RM" --list --purge-path /listtest/b 2>/dev/null)
+filtered_both=$("$BETTER_RM" --list --purge 30d --purge-path /listtest/a 2>/dev/null)
+after_count=$(find "$TEST_TRASH_DIR" -type f | wc -l | tr -d ' ')
+if [ "$before_count" = "$after_count" ] && \
+   [ "$(echo "$filtered_age" | wc -l | tr -d ' ')" = "2" ] && \
+   echo "$filtered_path" | grep -q "/listtest/b/new.txt" && [ "$(echo "$filtered_path" | wc -l | tr -d ' ')" = "1" ] && \
+   [ "$(echo "$filtered_both" | wc -l | tr -d ' ')" = "2" ]; then
+    test_pass "篩選正確且未刪除任何檔案"
+else
+    test_fail "篩選或唯讀行為不正確"
+fi
+
+test_item "--list 無符合項目、垃圾桶不存在時成功結束；無效條件與衝突選項回傳失敗"
+empty_ok=true
+"$BETTER_RM" --list --purge-path /nonexistent-prefix >/dev/null 2>&1 || empty_ok=false
+TRASH_DIR="/tmp/better-rm-no-such-trash" "$BETTER_RM" --list >/dev/null 2>&1 || empty_ok=false
+list_rejected=true
+for invalid_args in "--list --purge 5x" "--list --dry-run" "--list file.txt" "--list --restore x"; do
+    # shellcheck disable=SC2086
+    if "$BETTER_RM" $invalid_args >/dev/null 2>&1; then
+        list_rejected=false
+    fi
+done
+if [ "$empty_ok" = true ] && [ "$list_rejected" = true ]; then
+    test_pass "邊界情況處理正確"
+else
+    test_fail "邊界情況處理不正確 (empty_ok=$empty_ok, list_rejected=$list_rejected)"
+fi
+
+# ============================================================================
+# 測試 18: --purge 確認前先預覽 (Test 18: Preview Before --purge Confirmation)
+# ============================================================================
+test_title "測試 18: --purge 確認前先預覽"
+
+setup
+cd "$TEST_WORK_DIR"
+make_trash_item "/previewtest/old.txt__20200101_120000_000000000__aaa"
+make_trash_item "/previewtest/keep.txt__20990101_120000_000000000__bbb"
+
+test_item "未加 -f 時，確認提示前先列出完整項目清單（選擇 n 不刪除）"
+preview_output=$(echo n | "$BETTER_RM" --purge 30 2>&1)
+if echo "$preview_output" | grep -q "would purge) '.*previewtest/old.txt__20200101" && \
+   ! echo "$preview_output" | grep -q "keep.txt" && \
+   echo "$preview_output" | grep -q "(y/N)" && \
+   [ -e "$TEST_TRASH_DIR/previewtest/old.txt__20200101_120000_000000000__aaa" ]; then
+    test_pass "確認前已列出將刪除的項目，且取消時未刪除"
+else
+    test_fail "確認前預覽不正確: $preview_output"
+fi
+
+test_item "加 -f 時不列出清單也不提示"
+force_output=$("$BETTER_RM" -f --purge 30 2>&1)
+if ! echo "$force_output" | grep -q "would purge" && ! echo "$force_output" | grep -q "(y/N)" && \
+   [ ! -e "$TEST_TRASH_DIR/previewtest/old.txt__20200101_120000_000000000__aaa" ]; then
+    test_pass "-f 行為維持不變"
+else
+    test_fail "-f 行為改變: $force_output"
+fi
+
+# ============================================================================
+# 測試 19: 垃圾桶摘要統計 (Test 19: Trash Statistics)
+# ============================================================================
+test_title "測試 19: 垃圾桶摘要統計"
+
+setup
+cd "$TEST_WORK_DIR"
+make_trash_item "/statstest/a/old.txt__20200101_120000_000000000__aaa"
+make_trash_item "/statstest/a/mid.txt__20240601_090000_000000000__bbb"
+make_trash_item "/statstest/b/new.txt__20990101_120000_000000000__ccc"
+mkdir -p "$TEST_TRASH_DIR/statstest/b/dir__20210101_120000_000000000__ddd"
+echo x > "$TEST_TRASH_DIR/statstest/b/dir__20210101_120000_000000000__ddd/f"
+echo foreign > "$TEST_TRASH_DIR/finder-item.txt"
+echo recent > recent_stats.txt
+"$BETTER_RM" recent_stats.txt
+
+test_item "--stats 顯示項目數、類型、最早與最新刪除時間"
+stats_output=$("$BETTER_RM" --stats 2>&1)
+if echo "$stats_output" | grep -q "項目數 (Items): *5（檔案 4、目錄 1、符號連結 0" && \
+   echo "$stats_output" | grep -q "最早刪除 (Oldest): *2020-01-01 12:00:00" && \
+   echo "$stats_output" | grep -q "最新刪除 (Newest): *2099-01-01 12:00:00" && \
+   echo "$stats_output" | grep -q "佔用空間 (Disk usage):"; then
+    test_pass "總覽統計正確且不含非 better-rm 的檔案"
+else
+    test_fail "總覽統計不正確: $stats_output"
+fi
+
+test_item "--stats 依刪除時間分佈：1 天內 2 項（近期與 2099）、超過 90 天 3 項"
+if echo "$stats_output" | grep -Eq "^ +2 項 +[0-9.]+ [KMG]iB  1 天內" && \
+   echo "$stats_output" | grep -Eq "^ +3 項 +[0-9.]+ [KMG]iB  超過 90 天"; then
+    test_pass "時間分佈正確"
+else
+    test_fail "時間分佈不正確: $stats_output"
+fi
+
+test_item "--stats 依原始目錄列出項目數"
+if echo "$stats_output" | grep -Eq " 2 項  /statstest/a$" && \
+   echo "$stats_output" | grep -Eq " 2 項  /statstest/b$"; then
+    test_pass "原始目錄統計正確"
+else
+    test_fail "原始目錄統計不正確: $stats_output"
+fi
+
+test_item "--stats 搭配 --purge / --purge-path 只篩選，不刪除任何項目"
+before_count=$(find "$TEST_TRASH_DIR" -type f | wc -l | tr -d ' ')
+stats_filtered=$("$BETTER_RM" --stats --purge-path /statstest/a --purge 2024-01-01 2>&1)
+after_count=$(find "$TEST_TRASH_DIR" -type f | wc -l | tr -d ' ')
+if [ "$before_count" = "$after_count" ] && \
+   echo "$stats_filtered" | grep -q "篩選條件 (Filter):" && \
+   echo "$stats_filtered" | grep -q "項目數 (Items): *1（檔案 1、目錄 0"; then
+    test_pass "篩選統計正確且未刪除任何檔案"
+else
+    test_fail "篩選統計或唯讀行為不正確: $stats_filtered"
+fi
+
+test_item "--stats 無符合項目時成功結束；與 --list、--dry-run、檔案參數並用時失敗"
+stats_ok=true
+"$BETTER_RM" --stats --purge-path /nonexistent-prefix >/dev/null 2>&1 || stats_ok=false
+stats_rejected=true
+for invalid_args in "--stats --list" "--stats --dry-run" "--stats file.txt" "--stats --purge 5x"; do
+    # shellcheck disable=SC2086
+    if "$BETTER_RM" $invalid_args >/dev/null 2>&1; then
+        stats_rejected=false
+    fi
+done
+if [ "$stats_ok" = true ] && [ "$stats_rejected" = true ]; then
+    test_pass "邊界情況處理正確"
+else
+    test_fail "邊界情況處理不正確 (stats_ok=$stats_ok, stats_rejected=$stats_rejected)"
+fi
+
+# ============================================================================
+# 測試 20: 執行中檔案被覆寫的防護 (Test 20: Safe When Script Is Overwritten While Running)
+# ============================================================================
+test_title "測試 20: 執行中檔案被覆寫的防護"
+
+test_item "main 結束後不再讀取腳本後續內容"
+guard_script="/tmp/better-rm-test-guard-script"
+cp "$BETTER_RM" "$guard_script"
+# 在腳本結尾附加會造成語法錯誤的殘片，模擬執行中被覆寫後 bash 讀到的內容
+# Append a syntax-error fragment to simulate what bash reads after an in-place overwrite
+printf '%s\n' '+)); do' >> "$guard_script"
+guard_output=$("$guard_script" --version 2>&1)
+guard_status=$?
+rm -f "$guard_script"
+if [ $guard_status -eq 0 ] && ! echo "$guard_output" | grep -q "syntax error"; then
+    test_pass "腳本結尾之後的內容不會被讀取"
+else
+    test_fail "仍會讀取 main 之後的內容 (status=$guard_status): $guard_output"
+fi
+
+# ============================================================================
 # 測試結果統計 (Test Results Summary)
 # ============================================================================
 cleanup
